@@ -2,7 +2,7 @@
    LE GRAND LIVRE — app.js
    =================================================================== */
 
-const APP_VERSION = "v1.6.0";
+const APP_VERSION = "v2.1.0";
 
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
@@ -32,7 +32,7 @@ let state = {
   poolSize: 20,
   resultCount: 25,
   mcapFloor: 1000000000,
-  dataSource: "fmp", // "fmp" | "finnhub"
+  dataSource: "snapshot", // "snapshot" | "fmp" | "finnhub"
   sortCol: "rank",
   sortDir: "asc",
   lastResults: [],
@@ -290,6 +290,7 @@ async function fetchEpsGrowthFMP(symbol){
 // ---------------------------------------------------------------
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
 
+let finnhubAccessErrorCount = 0;
 async function finnhubGet(path, params){
   const key = getFinnhubKey();
   const url = new URL(FINNHUB_BASE + path);
@@ -298,8 +299,14 @@ async function finnhubGet(path, params){
   requestCount++;
   const res = await fetchWithTimeout(url.toString(), undefined, 12000);
   if(!res.ok){
-    if(res.status===401 || res.status===403) throw new Error("Clé Finnhub invalide (HTTP "+res.status+")");
     if(res.status===429){ quotaErrorCount++; throw new Error("Quota Finnhub dépassé (HTTP 429)"); }
+    let body = null;
+    try{ body = await res.json(); }catch(e){ /* pas de JSON, tant pis */ }
+    if(res.status===403 && body && /don.t have access/i.test(body.error || "")){
+      finnhubAccessErrorCount++;
+      throw new Error("Marché non couvert par le plan gratuit Finnhub (accès refusé)");
+    }
+    if(res.status===401 || res.status===403) throw new Error("Clé Finnhub invalide (HTTP "+res.status+")");
     throw new Error("Erreur réseau Finnhub (HTTP "+res.status+")");
   }
   return res.json();
@@ -456,6 +463,14 @@ function estimateBudget(){
 function updateBudgetUI(){
   const bar = document.getElementById("budgetBar");
   const warn = document.getElementById("budgetWarn");
+  if(state.dataSource === "snapshot"){
+    document.getElementById("budgetNum").textContent = "—";
+    bar.classList.remove("over");
+    warn.textContent = snapshotCache
+      ? `Snapshot chargé (généré le ${new Date(snapshotCache.generatedAt).toLocaleString('fr-FR')}) — ${snapshotCache.count} titres, aucun appel réseau au lancement.`
+      : "Snapshot pas encore chargé — sera lu au premier lancement, aucun quota.";
+    return;
+  }
   if(state.dataSource === "finnhub"){
     document.getElementById("budgetNum").textContent = "—";
     bar.classList.remove("over");
@@ -476,7 +491,72 @@ function updateBudgetUI(){
 // ---------------------------------------------------------------
 // Main run
 // ---------------------------------------------------------------
+let snapshotCache = null;
+async function loadSnapshot(){
+  if(snapshotCache) return snapshotCache;
+  const res = await fetchWithTimeout("./data-snapshot.json", undefined, 15000);
+  if(!res.ok){
+    throw new Error("data-snapshot.json introuvable (HTTP "+res.status+") — lance d'abord le scraper local (voir scraper/README.md) puis commit le fichier généré à la racine du site.");
+  }
+  const json = await res.json();
+  if(!json || !Array.isArray(json.records)){
+    throw new Error("data-snapshot.json a un format inattendu.");
+  }
+  snapshotCache = json;
+  return json;
+}
+
+async function runScreeningFromSnapshot(){
+  const runBtn = document.getElementById("runBtn");
+  const progressTxt = document.getElementById("progressTxt");
+  runBtn.disabled = true;
+  progressTxt.textContent = "Chargement du snapshot local…";
+  try{
+    const countries = [...state.countries];
+    if(countries.length===0){ toast("Sélectionnez au moins un pays."); runBtn.disabled=false; progressTxt.textContent=""; return; }
+
+    const snap = await loadSnapshot();
+    let records = snap.records.filter(r => countries.includes(r.country));
+    records = records.filter(r => !r.mcap || r.mcap >= state.mcapFloor);
+
+    if(records.length === 0){
+      toast("Aucun titre dans le snapshot pour cette combinaison pays/capitalisation. Vérifie que le scraper a bien couvert ces pays, ou baisse le seuil de capitalisation.");
+      runBtn.disabled=false; progressTxt.textContent="";
+      return;
+    }
+
+    records = scorePool(records.map(r=>({...r}))); // copie défensive, scorePool mute les objets
+    const strat = STRATEGIES[state.strategy];
+    const selected = strat.select(records, state.resultCount);
+
+    state.lastResults = selected;
+    state.lastRunMeta = {
+      strategy: state.strategy,
+      poolCount: records.length,
+      universeCount: records.length,
+      countries: countries,
+      dataSource: "snapshot",
+      snapshotGeneratedAt: snap.generatedAt,
+      ts: Date.now(),
+    };
+    state.sortCol = "rank"; state.sortDir = "asc";
+    renderResults();
+    const anchor = document.getElementById("results-anchor");
+    if(anchor && anchor.scrollIntoView) anchor.scrollIntoView({behavior:"smooth", block:"start"});
+    progressTxt.textContent = `Terminé — snapshot local du ${new Date(snap.generatedAt).toLocaleString('fr-FR')}.`;
+  }catch(err){
+    console.error(err);
+    toast("Erreur : " + err.message);
+    progressTxt.textContent = "";
+  }finally{
+    runBtn.disabled = false;
+  }
+}
+
 async function runScreening(){
+  if(state.dataSource === "snapshot"){
+    return runScreeningFromSnapshot();
+  }
   if(state.dataSource === "fmp"){
     const apiKey = document.getElementById("apiKey").value.trim() || getApiKey();
     if(!apiKey){
@@ -499,6 +579,7 @@ async function runScreening(){
   const progressTxt = document.getElementById("progressTxt");
   requestCount = 0;
   quotaErrorCount = 0;
+  finnhubAccessErrorCount = 0;
 
   try{
     const countries = [...state.countries];
@@ -568,6 +649,8 @@ async function runScreening(){
     if(withData.length === 0){
       if(state.dataSource === "fmp" && quotaErrorCount > records.length){
         toast(`Quota FMP journalier dépassé (${quotaErrorCount} appels rejetés sur ${requestCount}). Le quota gratuit (250/jour) se réinitialise le lendemain — réessaie demain, réduis l'échantillon, ou passe sur la source Finnhub (réglages avancés).`);
+      }else if(state.dataSource === "finnhub" && finnhubAccessErrorCount > records.length/2){
+        toast(`Finnhub bloque l'accès à ce marché sur le plan gratuit (couverture limitée aux bourses américaines). Reste sur FMP pour les titres internationaux, ou limite Finnhub aux États-Unis.`);
       }else if(state.dataSource === "finnhub"){
         toast(`Aucune donnée exploitable via Finnhub pour cet échantillon — vérifie ta clé Finnhub, ou que le format de ticker (ex. ${records[0].symbol}) est bien reconnu par Finnhub pour cette bourse.`);
       }else{
@@ -753,7 +836,8 @@ function renderResults(){
   const strat = STRATEGIES[state.lastRunMeta.strategy];
   title.textContent = `${strat.name} — ${state.lastResults.length} entreprises`;
   const countryLabel = state.lastRunMeta.countries.map(c=>countryMeta(c)?.flag).join(" ");
-  const srcLabel = state.lastRunMeta.dataSource === "finnhub" ? "Finnhub" : "Financial Modeling Prep";
+  const srcLabel = state.lastRunMeta.dataSource === "snapshot" ? "Snapshot local"
+    : state.lastRunMeta.dataSource === "finnhub" ? "Finnhub" : "Financial Modeling Prep";
   meta.textContent = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · source : ${srcLabel} · ${new Date(state.lastRunMeta.ts).toLocaleString('fr-FR')}`;
   exportBtn.style.display = "inline-block";
 
@@ -868,6 +952,8 @@ function init(){
   const versionEl = document.getElementById("appVersion");
   if(versionEl) versionEl.textContent = APP_VERSION;
 
+  document.getElementById("dataSource").value = state.dataSource;
+
   renderStrategyCards();
   renderZonesAndCountries();
   renderNPicker();
@@ -892,7 +978,7 @@ function init(){
 
   document.getElementById("dataSource").addEventListener("change", (e)=>{
     state.dataSource = e.target.value;
-    document.getElementById("fmpKeyField").style.display = state.dataSource==="finnhub" ? "none" : "block";
+    document.getElementById("fmpKeyField").style.display = state.dataSource==="fmp" ? "block" : "none";
     document.getElementById("finnhubKeyField").style.display = state.dataSource==="finnhub" ? "block" : "none";
     updateBudgetUI();
   });

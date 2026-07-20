@@ -341,17 +341,18 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
         <div class="field">
           <label>Source de données</label>
           <select id="dataSource">
+            <option value="snapshot">Snapshot local (recommandé — généré par le scraper Python)</option>
             <option value="fmp">Financial Modeling Prep (clé requise, 250 req/jour)</option>
             <option value="finnhub">Finnhub — secours gratuit (clé gratuite, 60 req/minute)</option>
           </select>
-          <div class="hint">Bascule ici si le quota FMP est épuisé. Finnhub fonctionne en direct depuis le navigateur (pas de proxy nécessaire) avec une clé gratuite distincte — beaucoup plus généreuse (60/min) mais le rendement actionnarial s'y limite au dividende (pas de données de rachats d'actions en accès gratuit).</div>
+          <div class="hint">Le mode "Snapshot local" lit <code>data-snapshot.json</code> généré par le scraper Python (dossier <code>scraper/</code>, tourne sur ton PC) — univers complet, pas de clé, pas de quota, pas de CORS. Les modes FMP/Finnhub restent utiles pour un coup d'œil ponctuel en direct entre deux exécutions du scraper. <b>Finnhub gratuit est limité aux bourses américaines</b> (accès refusé sur les marchés internationaux) ; FMP gratuit est également limité aux USA sauf upgrade payant.</div>
         </div>
         <div class="field" id="finnhubKeyField" style="display:none">
           <label>Clé API Finnhub</label>
           <input type="password" id="finnhubKey" placeholder="Collez votre clé Finnhub ici">
           <div class="hint">Gratuite sur <a href="https://finnhub.io/register" target="_blank" style="color:var(--verdigris-bright)">finnhub.io/register</a> — 60 requêtes/minute. Stockée uniquement dans votre navigateur.</div>
         </div>
-        <div class="field" id="fmpKeyField">
+        <div class="field" id="fmpKeyField" style="display:none">
           <label>Clé API Financial Modeling Prep</label>
           <input type="password" id="apiKey" placeholder="Collez votre clé ici">
           <div class="key-status"><span class="dot" id="keyDot"></span><span id="keyStatusTxt">Aucune clé enregistrée</span></div>
@@ -397,7 +398,7 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
 
 </div>
 
-<script src="data.js?v=1.6.0"></script>
-<script src="app.js?v=1.6.0"></script>
+<script src="data.js?v=2.1.0"></script>
+<script src="app.js?v=2.1.0"></script>
 </body>
 </html>

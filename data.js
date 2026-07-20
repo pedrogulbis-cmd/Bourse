@@ -34,14 +34,28 @@ const COUNTRIES = [
   {code:"GB", name:"Royaume-Uni", flag:"🇬🇧", zone:"eu"},
   {code:"NL", name:"Pays-Bas", flag:"🇳🇱", zone:"eu"},
   {code:"CH", name:"Suisse", flag:"🇨🇭", zone:"eu"},
+  {code:"ES", name:"Espagne", flag:"🇪🇸", zone:"eu"},
+  {code:"IT", name:"Italie", flag:"🇮🇹", zone:"eu"},
+  {code:"BE", name:"Belgique", flag:"🇧🇪", zone:"eu"},
+  {code:"SE", name:"Suède", flag:"🇸🇪", zone:"eu"},
+  {code:"DK", name:"Danemark", flag:"🇩🇰", zone:"eu"},
+  {code:"NO", name:"Norvège", flag:"🇳🇴", zone:"eu"},
+  {code:"FI", name:"Finlande", flag:"🇫🇮", zone:"eu"},
+  {code:"PT", name:"Portugal", flag:"🇵🇹", zone:"eu"},
+  {code:"AT", name:"Autriche", flag:"🇦🇹", zone:"eu"},
+  {code:"IE", name:"Irlande", flag:"🇮🇪", zone:"eu"},
   {code:"JP", name:"Japon", flag:"🇯🇵", zone:"apac"},
+  {code:"AU", name:"Australie", flag:"🇦🇺", zone:"apac"},
+  {code:"HK", name:"Hong Kong", flag:"🇭🇰", zone:"apac"},
+  {code:"SG", name:"Singapour", flag:"🇸🇬", zone:"apac"},
+  {code:"KR", name:"Corée du Sud", flag:"🇰🇷", zone:"apac"},
 ];
 
 const ZONES = [
   {id:"na", label:"Amérique du Nord", countries:["US","CA"]},
-  {id:"eu", label:"Europe", countries:["FR","DE","GB","NL","CH"]},
-  {id:"apac", label:"Asie-Pacifique", countries:["JP"]},
-  {id:"world", label:"Monde (sélection large)", countries:["US","CA","GB","FR","DE","CH","NL","JP"]},
+  {id:"eu", label:"Europe", countries:["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE"]},
+  {id:"apac", label:"Asie-Pacifique", countries:["JP","AU","HK","SG","KR"]},
+  {id:"world", label:"Monde (sélection large)", countries:["US","CA","GB","FR","DE","CH","NL","ES","IT","JP","AU","KR"]},
 ];
 
 function countryMeta(code){ return COUNTRIES.find(c=>c.code===code); }

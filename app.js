@@ -2,7 +2,7 @@
    LE GRAND LIVRE — app.js
    =================================================================== */
 
-const APP_VERSION = "v2.1.0";
+const APP_VERSION = "v2.1.1";
 
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
@@ -494,7 +494,11 @@ function updateBudgetUI(){
 let snapshotCache = null;
 async function loadSnapshot(){
   if(snapshotCache) return snapshotCache;
-  const res = await fetchWithTimeout("./data-snapshot.json", undefined, 15000);
+  // Cache-buster : sans ça, le navigateur (ou le CDN de GitHub Pages) peut
+  // continuer à servir une ancienne version du fichier après un ré-upload,
+  // puisque data-snapshot.json garde toujours le même nom.
+  const url = "./data-snapshot.json?t=" + Date.now();
+  const res = await fetchWithTimeout(url, {cache:"no-store"}, 15000);
   if(!res.ok){
     throw new Error("data-snapshot.json introuvable (HTTP "+res.status+") — lance d'abord le scraper local (voir scraper/README.md) puis commit le fichier généré à la racine du site.");
   }

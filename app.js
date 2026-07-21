@@ -2,7 +2,7 @@
    LE GRAND LIVRE — app.js
    =================================================================== */
 
-const APP_VERSION = "v2.2.0";
+const APP_VERSION = "v2.2.1";
 
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
@@ -842,7 +842,7 @@ function renderResults(){
   const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
   const srcLabel = state.lastRunMeta.dataSource === "snapshot" ? "Snapshot local"
     : state.lastRunMeta.dataSource === "finnhub" ? "Finnhub" : "Financial Modeling Prep";
-  meta.textContent = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · source : ${srcLabel} · ${new Date(state.lastRunMeta.ts).toLocaleString('fr-FR')}`;
+  meta.innerHTML = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · source : ${srcLabel} · ${new Date(state.lastRunMeta.ts).toLocaleString('fr-FR')}`;
   exportBtn.style.display = "inline-block";
 
   let rows = [...state.lastResults];

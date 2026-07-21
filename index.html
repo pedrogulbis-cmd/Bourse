@@ -231,6 +231,15 @@ td.num.neg{color:var(--oxide-bright);}
   border:1px solid rgba(192,138,62,0.35);
 }
 .flag{margin-right:5px;}
+/* Emoji drapeau par défaut (mobile) ; image réelle sur desktop, où les
+   polices système n'affichent pas toujours correctement les drapeaux
+   (notamment Windows). Bascule au même palier que le reste de l'UI. */
+.flag-emoji{display:inline;}
+.flag-img{display:none;vertical-align:-2px;border-radius:2px;box-shadow:0 0 0 1px rgba(232,227,211,0.12);}
+@media(min-width:821px){
+  .flag-emoji{display:none;}
+  .flag-img{display:inline-block;}
+}
 
 .detail-row td{background:var(--panel-raised);white-space:normal;padding:16px 18px;}
 .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;}
@@ -398,7 +407,7 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
 
 </div>
 
-<script src="data.js?v=2.1.2"></script>
-<script src="app.js?v=2.1.2"></script>
+<script src="data.js?v=2.2.0"></script>
+<script src="app.js?v=2.2.0"></script>
 </body>
 </html>

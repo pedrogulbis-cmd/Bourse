@@ -2,7 +2,7 @@
    LE GRAND LIVRE — app.js
    =================================================================== */
 
-const APP_VERSION = "v2.1.2";
+const APP_VERSION = "v2.2.0";
 
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
@@ -765,7 +765,7 @@ function renderCountryList(){
   COUNTRIES.forEach(c=>{
     const item = document.createElement("label");
     item.className = "c-item" + (state.countries.has(c.code) ? " checked":"");
-    item.innerHTML = `<input type="checkbox" ${state.countries.has(c.code)?"checked":""}> ${c.flag} ${c.name}`;
+    item.innerHTML = `<input type="checkbox" ${state.countries.has(c.code)?"checked":""}> ${flagHTML(c.code)} ${c.name}`;
     item.querySelector("input").addEventListener("change", (e)=>{
       if(e.target.checked) state.countries.add(c.code); else state.countries.delete(c.code);
       item.classList.toggle("checked", e.target.checked);
@@ -839,7 +839,7 @@ function renderResults(){
 
   const strat = STRATEGIES[state.lastRunMeta.strategy];
   title.textContent = `${strat.name} — ${state.lastResults.length} entreprises`;
-  const countryLabel = state.lastRunMeta.countries.map(c=>countryMeta(c)?.flag).join(" ");
+  const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
   const srcLabel = state.lastRunMeta.dataSource === "snapshot" ? "Snapshot local"
     : state.lastRunMeta.dataSource === "finnhub" ? "Finnhub" : "Financial Modeling Prep";
   meta.textContent = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · source : ${srcLabel} · ${new Date(state.lastRunMeta.ts).toLocaleString('fr-FR')}`;
@@ -866,7 +866,7 @@ function renderResults(){
     const cm = countryMeta(s.country);
     html += `<tr data-symbol="${s.symbol}">
       <td class="rank">${rank}</td>
-      <td class="name"><span class="tkr">${cm?cm.flag+' ':''}${s.symbol}</span><span class="cname">${s.name}</span></td>
+      <td class="name"><span class="tkr">${cm?flagHTML(s.country)+' ':''}${s.symbol}</span><span class="cname">${s.name}</span></td>
       <td class="num"><span class="score-pill">${s.vc2Score}</span></td>
       <td class="num ${s.mom6>=0?'pos':'neg'}">${fmtMom(s.mom6)}</td>
       <td class="num ${s.mom3>=0?'pos':'neg'}">${fmtMom(s.mom3)}</td>
@@ -875,7 +875,7 @@ function renderResults(){
       <td class="num">${fmtNum(s.ps)}</td>
       <td class="num ${s.shareholderYield>=0?'pos':'neg'}">${fmtPct(s.shareholderYield)}</td>
       <td class="num">${fmtMcap(s.mcap)}</td>
-      <td class="num">${cm?cm.flag+' '+cm.code:s.country||'—'}</td>
+      <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}</td>
     </tr>
     <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length}">
       <div class="detail-grid">

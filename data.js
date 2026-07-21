@@ -60,6 +60,17 @@ const ZONES = [
 
 function countryMeta(code){ return COUNTRIES.find(c=>c.code===code); }
 
+// Génère à la fois l'emoji drapeau (utilisé en mobile) et une vraie image de
+// drapeau via flagcdn.com (utilisée en desktop, où les polices d'emoji du
+// système n'affichent pas toujours les drapeaux correctement — notamment
+// Windows). Le bon élément est choisi en CSS selon la largeur d'écran.
+function flagHTML(code){
+  if(!code) return "";
+  const cc = code.toLowerCase();
+  const label = countryMeta(code)?.flag || code;
+  return `<span class="flag-emoji">${label}</span><img class="flag-img" src="https://flagcdn.com/20x15/${cc}.png" srcset="https://flagcdn.com/40x30/${cc}.png 2x" width="20" height="15" alt="${code}" loading="lazy">`;
+}
+
 // ---------- Alias de champs API (les noms exacts varient selon les versions FMP) ----------
 const FIELD_ALIASES = {
   pb:      ["priceToBookRatioTTM","priceBookValueRatioTTM","pbRatioTTM","priceToBookRatio"],

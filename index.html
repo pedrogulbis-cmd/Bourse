@@ -288,7 +288,7 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
     </div>
     <div class="source-tag">
       Méthodologie d'après <b>James O'Shaughnessy</b>, <i>What Works on Wall Street</i>, 4ᵉ éd.<br>
-      Backtests 1927–2009 sur le marché US · données live via Financial Modeling Prep
+      Backtests 1927–2009 sur le marché US · données via snapshot local (yfinance)
     </div>
   </header>
 
@@ -316,12 +316,6 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
           <div class="n-picker" id="nPicker"></div>
         </div>
         <div class="field">
-          <label>Profondeur d'analyse par pays</label>
-          <div class="slider-row">Échantillon analysé / pays <b id="poolVal">20</b></div>
-          <input type="range" id="poolSize" min="10" max="80" step="5" value="20">
-          <div class="hint">Chaque lancement priorise les titres jamais encore analysés dans l'indice réel du pays (composition récupérée automatiquement depuis Wikipedia). Relancer plus tard élargit progressivement la couverture.</div>
-        </div>
-        <div class="field">
           <label>Capitalisation minimum</label>
           <select id="mcapFloor">
             <option value="200000000">≥ 200 M$ (univers "All Stocks" du livre)</option>
@@ -333,46 +327,10 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
       </div>
     </div>
 
-    <div class="budget-bar" id="budgetBar">
-      <span>Requêtes API estimées pour ce screening : <b id="budgetNum">0</b> / 250 (quota gratuit FMP / jour)</span>
-      <span id="budgetWarn"></span>
-    </div>
-
     <div class="run-row">
       <button class="btn-run" id="runBtn">Lancer le screening</button>
-      <button class="btn-ghost" id="clearCacheBtn">Vider le cache local</button>
       <span class="progress-txt" id="progressTxt"></span>
     </div>
-
-    <details class="settings">
-      <summary>Clé API &amp; réglages avancés</summary>
-      <div class="inner">
-        <div class="field">
-          <label>Source de données</label>
-          <select id="dataSource">
-            <option value="snapshot">Snapshot local (recommandé — généré par le scraper Python)</option>
-            <option value="fmp">Financial Modeling Prep (clé requise, 250 req/jour)</option>
-            <option value="finnhub">Finnhub — secours gratuit (clé gratuite, 60 req/minute)</option>
-          </select>
-          <div class="hint">Le mode "Snapshot local" lit <code>data-snapshot.json</code> généré par le scraper Python (dossier <code>scraper/</code>, tourne sur ton PC) — univers complet, pas de clé, pas de quota, pas de CORS. Les modes FMP/Finnhub restent utiles pour un coup d'œil ponctuel en direct entre deux exécutions du scraper. <b>Finnhub gratuit est limité aux bourses américaines</b> (accès refusé sur les marchés internationaux) ; FMP gratuit est également limité aux USA sauf upgrade payant.</div>
-        </div>
-        <div class="field" id="finnhubKeyField" style="display:none">
-          <label>Clé API Finnhub</label>
-          <input type="password" id="finnhubKey" placeholder="Collez votre clé Finnhub ici">
-          <div class="hint">Gratuite sur <a href="https://finnhub.io/register" target="_blank" style="color:var(--verdigris-bright)">finnhub.io/register</a> — 60 requêtes/minute. Stockée uniquement dans votre navigateur.</div>
-        </div>
-        <div class="field" id="fmpKeyField" style="display:none">
-          <label>Clé API Financial Modeling Prep</label>
-          <input type="password" id="apiKey" placeholder="Collez votre clé ici">
-          <div class="key-status"><span class="dot" id="keyDot"></span><span id="keyStatusTxt">Aucune clé enregistrée</span></div>
-          <div class="hint">Gratuite sur <a href="https://site.financialmodelingprep.com/developer/docs/dashboard" target="_blank" style="color:var(--verdigris-bright)">financialmodelingprep.com</a> — 250 requêtes/jour. Stockée uniquement dans votre navigateur (localStorage), jamais envoyée ailleurs.</div>
-        </div>
-        <div class="field">
-          <label>Cache local</label>
-          <div class="hint">Les données brutes récupérées sont mises en cache 24h par titre et par source. Changer de stratégie ou de nombre de résultats ne relance donc pas d'appels si les données sont déjà en cache.</div>
-        </div>
-      </div>
-    </details>
   </div>
 
   <!-- RESULTS -->
@@ -390,7 +348,7 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
   <div id="resultsContainer">
     <div class="empty-state">
       <div class="big">Aucun classement pour l'instant</div>
-      Choisissez une stratégie, une zone géographique, entrez votre clé API FMP, puis lancez le screening.
+      Choisissez une stratégie et une zone géographique, puis lancez le screening.
     </div>
   </div>
 
@@ -401,13 +359,13 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
   </div>
 
   <footer>
-    <div>Données fondamentales et cours fournis par <a href="https://financialmodelingprep.com" target="_blank">Financial Modeling Prep</a>. La couverture des fondamentaux hors États-Unis peut être limitée sur un plan API gratuit ; certains titres non-US afficheront des rangs neutres (50) si des données leur manquent — la méthode du livre traite explicitement les valeurs manquantes de cette façon.</div>
+    <div>Données fondamentales et cours issus de <a href="https://finance.yahoo.com" target="_blank">Yahoo Finance</a>, récupérées par un scraper Python local (dossier <code>scraper/</code>) et publiées sous forme d'un snapshot statique (<code>data-snapshot.json</code>). Une valeur manquante affiche un rang neutre (50) — la méthode du livre traite explicitement les données manquantes de cette façon.</div>
     <div class="disclaimer">Outil éducatif basé sur des backtests historiques (1927–2009, marché américain). Les performances passées ne préjugent pas des performances futures. Ceci ne constitue pas un conseil en investissement.</div>
   </footer>
 
 </div>
 
-<script src="data.js?v=2.2.1"></script>
-<script src="app.js?v=2.2.1"></script>
+<script src="data.js?v=3.0.0"></script>
+<script src="app.js?v=3.0.0"></script>
 </body>
 </html>

@@ -1,13 +1,15 @@
 /* ===================================================================
-   LE GRAND LIVRE — app.js
+   LE GRAND LIVRE — app.js (v3.0 — snapshot local uniquement)
+   Toute la logique d'appel API en direct (FMP, Finnhub, Wikipedia) a été
+   retirée : le site lit uniquement data-snapshot.json, généré par le
+   scraper Python local (dossier scraper/). Plus simple, plus rapide,
+   aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v2.2.1";
+const APP_VERSION = "v3.0.0";
 
-const FMP_BASE = "https://financialmodelingprep.com/stable";
-
-// Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau mobile instable,
-// proxy qui ne répond jamais, etc.) — on force un délai maximum partout.
+// Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
+// serveur qui ne répond jamais, etc.) — on force un délai maximum.
 async function fetchWithTimeout(url, options, timeoutMs = 15000){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
@@ -20,389 +22,21 @@ async function fetchWithTimeout(url, options, timeoutMs = 15000){
     clearTimeout(timer);
   }
 }
-const CACHE_TTL_FUNDAMENTALS = 24*3600*1000;   // 24h
-const CACHE_TTL_SCREENER     = 6*3600*1000;    // 6h
-const CACHE_KEY = "wss_cache_v1";
-const APIKEY_KEY = "wss_apikey_v1";
-const FINNHUB_KEY_KEY = "wss_finnhub_key_v1";
 
 let state = {
   strategy: "trending_value",
-  countries: new Set(["US"]),
-  poolSize: 20,
+  countries: new Set(), // aucun pays coché par défaut
   resultCount: 25,
   mcapFloor: 1000000000,
-  dataSource: "snapshot", // "snapshot" | "fmp" | "finnhub"
   sortCol: "rank",
   sortDir: "asc",
   lastResults: [],
   lastRunMeta: null,
 };
 
-let cache = loadCache();
-
 // ---------------------------------------------------------------
-// Cache helpers (localStorage)
+// Scoring (Value Composite Two, percentile ranks) — fidèle au livre
 // ---------------------------------------------------------------
-function loadCache(){
-  try{
-    const raw = localStorage.getItem(CACHE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return {fund: parsed.fund||{}, screen: parsed.screen||{}, index: parsed.index||{}};
-  }catch(e){ return {fund:{}, screen:{}, index:{}}; }
-}
-function saveCache(){
-  try{ localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); }catch(e){/* quota exceeded, ignore */}
-}
-function cacheGetFund(symbol){
-  const e = cache.fund[symbol];
-  if(e && (Date.now()-e.ts) < CACHE_TTL_FUNDAMENTALS) return e.data;
-  return null;
-}
-function cacheSetFund(symbol, data){
-  cache.fund[symbol] = {ts:Date.now(), data};
-}
-function cacheGetScreen(key){
-  const e = cache.screen[key];
-  if(e && (Date.now()-e.ts) < CACHE_TTL_SCREENER) return e.data;
-  return null;
-}
-function cacheSetScreen(key, data){
-  cache.screen[key] = {ts:Date.now(), data};
-}
-
-// ---------------------------------------------------------------
-// API key
-// ---------------------------------------------------------------
-function getApiKey(){ try{ return localStorage.getItem(APIKEY_KEY) || ""; }catch(e){ return ""; } }
-function setApiKey(k){ try{ localStorage.setItem(APIKEY_KEY, k); }catch(e){ /* stockage indisponible */ } }
-function getFinnhubKey(){ try{ return localStorage.getItem(FINNHUB_KEY_KEY) || ""; }catch(e){ return ""; } }
-function setFinnhubKey(k){ try{ localStorage.setItem(FINNHUB_KEY_KEY, k); }catch(e){ /* stockage indisponible */ } }
-
-// ---------------------------------------------------------------
-// Fetch helpers
-// ---------------------------------------------------------------
-let requestCount = 0;
-let quotaErrorCount = 0;
-async function fmpGet(path, params){
-  const key = getApiKey();
-  const url = new URL(FMP_BASE + path);
-  Object.entries(params||{}).forEach(([k,v])=>url.searchParams.set(k,v));
-  url.searchParams.set("apikey", key);
-  requestCount++;
-  const res = await fetchWithTimeout(url.toString(), undefined, 15000);
-  if(!res.ok){
-    if(res.status===401 || res.status===403) throw new Error("Clé API invalide ou quota dépassé (HTTP "+res.status+")");
-    throw new Error("Erreur réseau FMP (HTTP "+res.status+")");
-  }
-  const data = await res.json();
-  // FMP renvoie parfois un statut 200 avec un objet d'erreur au lieu du tableau attendu
-  // (quota journalier dépassé, endpoint restreint, symbole invalide...)
-  if(data && !Array.isArray(data) && (data["Error Message"] || data.error || data.message)){
-    const msg = data["Error Message"] || data.error || data.message;
-    if(/limit reach/i.test(msg)) quotaErrorCount++;
-    throw new Error(msg);
-  }
-  return data;
-}
-
-// small concurrency-limited pool runner
-async function runPool(items, limit, worker){
-  const results = new Array(items.length);
-  let i = 0;
-  async function next(){
-    while(i < items.length){
-      const idx = i++;
-      results[idx] = await worker(items[idx], idx);
-    }
-  }
-  const runners = Array.from({length: Math.min(limit, items.length)}, next);
-  await Promise.all(runners);
-  return results;
-}
-
-// ---------------------------------------------------------------
-// Univers dynamique via Wikipedia (composition réelle des indices)
-// ---------------------------------------------------------------
-const CACHE_TTL_INDEX = 30*24*3600*1000; // 30 jours — la composition d'un indice change rarement
-
-function cacheGetIndex(country){
-  const e = cache.index && cache.index[country];
-  if(e && (Date.now()-e.ts) < CACHE_TTL_INDEX) return e.data;
-  return null;
-}
-function cacheSetIndex(country, data){
-  if(!cache.index) cache.index = {};
-  cache.index[country] = {ts:Date.now(), data};
-}
-
-function cleanCell(text){
-  return (text||"").replace(/\[\d+\]/g, "").replace(/^[A-Za-z]{2,6}:\s*/, "").trim();
-}
-
-function pickColumn(headerCells, patterns){
-  for(let i=0;i<headerCells.length;i++){
-    const t = headerCells[i].toLowerCase();
-    if(patterns.some(p=>t.includes(p))) return i;
-  }
-  return -1;
-}
-
-// Parse le HTML rendu d'une page Wikipedia et en extrait la table de composants
-function parseConstituentsHTML(html, suffix){
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const tables = [...doc.querySelectorAll("table.wikitable")];
-  let best = null;
-
-  tables.forEach(table=>{
-    const headerRow = table.querySelector("tr");
-    if(!headerRow) return;
-    const headers = [...headerRow.querySelectorAll("th,td")].map(c=>c.textContent.trim().toLowerCase());
-    const tickerCol = pickColumn(headers, ["symbol","ticker","code","epic"]);
-    const nameCol = pickColumn(headers, ["security","company","name"]);
-    if(tickerCol===-1) return;
-    const sectorCol = pickColumn(headers, ["sector","industry"]);
-
-    const rows = [...table.querySelectorAll("tr")].slice(1);
-    const parsed = rows.map(row=>{
-      const cells = [...row.querySelectorAll("td,th")];
-      if(cells.length <= tickerCol) return null;
-      let symbol = cleanCell(cells[tickerCol].textContent);
-      if(!symbol) return null;
-      // évite de re-suffixer si la cellule contient déjà un point (rare mais possible)
-      if(suffix && !symbol.includes(".")) symbol = symbol + suffix;
-      const name = nameCol!==-1 && cells[nameCol] ? cleanCell(cells[nameCol].textContent) : symbol;
-      const sector = sectorCol!==-1 && cells[sectorCol] ? cleanCell(cells[sectorCol].textContent) : "—";
-      return {symbol, name, sector};
-    }).filter(Boolean);
-
-    if(!best || parsed.length > best.length) best = parsed;
-  });
-
-  return best || [];
-}
-
-async function fetchIndexConstituents(country){
-  const cached = cacheGetIndex(country);
-  if(cached) return cached;
-  const src = INDEX_SOURCES[country];
-  if(!src) return [];
-  const url = "https://en.wikipedia.org/w/api.php?" + new URLSearchParams({
-    action: "parse", page: src.page, prop: "text", format: "json", formatversion: "2", redirects: "1", origin: "*",
-  });
-  const res = await fetchWithTimeout(url, undefined, 15000);
-  if(!res.ok) throw new Error("Wikipedia HTTP " + res.status);
-  const data = await res.json();
-  if(data.error) throw new Error("Wikipedia : " + (data.error.info || data.error.code));
-  const html = data.parse && data.parse.text;
-  if(!html) throw new Error("Page Wikipedia vide ou introuvable (" + src.page + ")");
-  const list = parseConstituentsHTML(html, src.suffix);
-  if(list.length === 0) throw new Error("Impossible d'extraire la table de composants pour " + src.indexName);
-  cacheSetIndex(country, list);
-  return list;
-}
-
-// Échantillonne poolSize candidats en priorisant les titres jamais/rarement récupérés
-// (progressive coverage : chaque run explore de nouveaux titres jusqu'à couvrir tout l'indice)
-function sampleCandidates(fullList, n){
-  const now = Date.now();
-  const prefix = state.dataSource === "finnhub" ? "finnhub:" : "fmp:";
-  const withAge = fullList.map(item=>{
-    const cached = cacheGetFund(prefix + item.symbol);
-    const age = cached ? (now - cached.fetchedAt) : Infinity;
-    return {...item, _age: age};
-  });
-  withAge.sort((a,b)=> b._age - a._age);
-  return withAge.slice(0, n);
-}
-
-// ---------------------------------------------------------------
-// Source de données FMP — normalise vers le format commun
-// ---------------------------------------------------------------
-async function fetchFundamentalsFMP(symbol){
-  const cached = cacheGetFund("fmp:"+symbol);
-  if(cached) return cached;
-  const [quote, ratios, keyMetrics, priceChange, cashFlow] = await Promise.all([
-    fmpGet("/quote", {symbol}).catch(()=>null),
-    fmpGet("/ratios-ttm", {symbol}).catch(()=>null),
-    fmpGet("/key-metrics-ttm", {symbol}).catch(()=>null),
-    fmpGet("/stock-price-change", {symbol}).catch(()=>null),
-    fmpGet("/cash-flow-statement-ttm", {symbol}).catch(()=>null),
-  ]);
-  const q = Array.isArray(quote) ? quote[0] : quote;
-  const r = Array.isArray(ratios) ? ratios[0] : ratios;
-  const km = Array.isArray(keyMetrics) ? keyMetrics[0] : keyMetrics;
-  const pc = Array.isArray(priceChange) ? priceChange[0] : priceChange;
-  const cf = Array.isArray(cashFlow) ? cashFlow[0] : cashFlow;
-
-  const pbRaw = pick(r, FIELD_ALIASES.pb);
-  const peRaw = pick(r, FIELD_ALIASES.pe);
-  const psRaw = pick(r, FIELD_ALIASES.ps);
-  const pcfRaw = pick(r, FIELD_ALIASES.pcf);
-  const evMultRaw = pick(km, FIELD_ALIASES.evEbitda) ?? pick(r, FIELD_ALIASES.evEbitda);
-  const divYieldRaw = pick(r, FIELD_ALIASES.divYield) ?? 0;
-  const mcap = pick(q, FIELD_ALIASES.mcap) ?? pick(km, FIELD_ALIASES.mcap) ?? 0;
-  const buybackRaw = pick(cf, FIELD_ALIASES.buyback); // négatif = cash dépensé en rachats
-  const buybackYield = (buybackRaw!==null && mcap>0) ? Math.max(0, -buybackRaw)/mcap : 0;
-
-  const data = {
-    price: (q && q.price) ?? null,
-    exchange: (q && q.exchange) || "—",
-    mcap,
-    pb: (pbRaw!==null && pbRaw>0) ? pbRaw : null,
-    pe: (peRaw!==null && peRaw>0) ? peRaw : null,
-    ps: (psRaw!==null && psRaw>0) ? psRaw : null,
-    pcf: (pcfRaw!==null && pcfRaw>0) ? pcfRaw : null,
-    ebitdaYield: (evMultRaw!==null && evMultRaw>0) ? (1/evMultRaw) : null,
-    divYield: divYieldRaw,
-    shareholderYield: divYieldRaw + buybackYield,
-    mom3: pc ? (pc["3M"] ?? 0) : 0,
-    mom6: pc ? (pc["6M"] ?? 0) : 0,
-    epsGrowth: null,
-    source: "fmp",
-    fetchedAt: Date.now(),
-  };
-  cacheSetFund("fmp:"+symbol, data);
-  return data;
-}
-
-async function fetchEpsGrowthFMP(symbol){
-  const key = "fmp:"+symbol;
-  const cached = cacheGetFund(key);
-  if(cached && cached.epsGrowth !== undefined && cached.epsGrowth !== null) return cached.epsGrowth;
-  let val = null;
-  try{
-    const g = await fmpGet("/financial-growth", {symbol, limit:1});
-    const row = Array.isArray(g) ? g[0] : g;
-    val = pick(row, FIELD_ALIASES.epsGrowth);
-  }catch(e){ val = null; }
-  const existing = cache.fund[key] ? cache.fund[key].data : {};
-  cacheSetFund(key, {...existing, epsGrowth: val});
-  return val;
-}
-
-// ---------------------------------------------------------------
-// Source de données Finnhub (secours gratuit) — 60 requêtes/minute,
-// CORS géré nativement par Finnhub (pas de proxy nécessaire, contrairement
-// à Yahoo Finance qui exige depuis 2023 un cookie de session + "crumb"
-// anti-scraping impossible à obtenir de façon fiable depuis un navigateur
-// sans backend — Yahoo a donc été abandonné comme source).
-// ---------------------------------------------------------------
-const FINNHUB_BASE = "https://finnhub.io/api/v1";
-
-let finnhubAccessErrorCount = 0;
-async function finnhubGet(path, params){
-  const key = getFinnhubKey();
-  const url = new URL(FINNHUB_BASE + path);
-  Object.entries(params||{}).forEach(([k,v])=>url.searchParams.set(k,v));
-  url.searchParams.set("token", key);
-  requestCount++;
-  const res = await fetchWithTimeout(url.toString(), undefined, 12000);
-  if(!res.ok){
-    if(res.status===429){ quotaErrorCount++; throw new Error("Quota Finnhub dépassé (HTTP 429)"); }
-    let body = null;
-    try{ body = await res.json(); }catch(e){ /* pas de JSON, tant pis */ }
-    if(res.status===403 && body && /don.t have access/i.test(body.error || "")){
-      finnhubAccessErrorCount++;
-      throw new Error("Marché non couvert par le plan gratuit Finnhub (accès refusé)");
-    }
-    if(res.status===401 || res.status===403) throw new Error("Clé Finnhub invalide (HTTP "+res.status+")");
-    throw new Error("Erreur réseau Finnhub (HTTP "+res.status+")");
-  }
-  return res.json();
-}
-
-async function fetchFundamentalsFinnhub(symbol){
-  const cached = cacheGetFund("finnhub:"+symbol);
-  if(cached) return cached;
-
-  // Finnhub attend le ticker "nu" (sans suffixe .PA/.DE/.T/.TO/.L/.SW/.AS ajouté
-  // pour Wikipedia/FMP) pour la plupart des grandes bourses US ; pour les bourses
-  // internationales il utilise ses propres conventions (souvent SYMBOLE.BOURSE,
-  // ex. MC.PA fonctionne aussi chez Finnhub pour Euronext Paris).
-  const [metricRes, quoteRes] = await Promise.all([
-    finnhubGet("/stock/metric", {symbol, metric:"all"}).catch(()=>null),
-    finnhubGet("/quote", {symbol}).catch(()=>null),
-  ]);
-
-  const m = (metricRes && metricRes.metric) || {};
-
-  const peRaw = pick(m, FINNHUB_ALIASES.pe);
-  const pbRaw = pick(m, FINNHUB_ALIASES.pb);
-  const psRaw = pick(m, FINNHUB_ALIASES.ps);
-  const pcfRaw = pick(m, FINNHUB_ALIASES.pcf);
-  const evMultRaw = pick(m, FINNHUB_ALIASES.evEbitda);
-  const divYieldPct = pick(m, FINNHUB_ALIASES.divYield); // Finnhub exprime en % (ex. 0.65 = 0,65%), pas en fraction
-  const mcapM = pick(m, FINNHUB_ALIASES.mcap); // en millions
-  const mom3Raw = pick(m, FINNHUB_ALIASES.mom3); // déjà en %
-  const mom6Raw = pick(m, FINNHUB_ALIASES.mom6); // déjà en %
-  const epsGrowthPct = pick(m, FINNHUB_ALIASES.epsGrowth);
-
-  const mcap = (mcapM!==null) ? mcapM*1e6 : 0;
-  const divYield = (divYieldPct!==null) ? divYieldPct/100 : 0; // uniformisé en fraction comme FMP
-
-  const data = {
-    price: (quoteRes && typeof quoteRes.c === "number" && quoteRes.c>0) ? quoteRes.c : null,
-    exchange: "—", // pas dispo sur /stock/metric ; non critique pour le scoring
-    mcap,
-    pb: (pbRaw!==null && pbRaw>0) ? pbRaw : null,
-    pe: (peRaw!==null && peRaw>0) ? peRaw : null,
-    ps: (psRaw!==null && psRaw>0) ? psRaw : null,
-    pcf: (pcfRaw!==null && pcfRaw>0) ? pcfRaw : null,
-    ebitdaYield: (evMultRaw!==null && evMultRaw>0) ? (1/evMultRaw) : null,
-    divYield,
-    // pas de champ "rachats d'actions" fiable en accès gratuit Finnhub :
-    // rendement actionnarial ramené au seul dividende pour cette source (limite documentée)
-    shareholderYield: divYield,
-    mom3: mom3Raw ?? 0,
-    mom6: mom6Raw ?? 0,
-    epsGrowth: (epsGrowthPct!==null) ? epsGrowthPct/100 : null,
-    source: "finnhub",
-    fetchedAt: Date.now(),
-  };
-  cacheSetFund("finnhub:"+symbol, data);
-  return data;
-}
-
-// ---------------------------------------------------------------
-// Dispatch source-agnostique
-// ---------------------------------------------------------------
-async function fetchFundamentals(symbol){
-  return state.dataSource === "finnhub" ? fetchFundamentalsFinnhub(symbol) : fetchFundamentalsFMP(symbol);
-}
-
-async function fetchEpsGrowth(symbol){
-  if(state.dataSource === "finnhub"){
-    // déjà récupéré dans fetchFundamentalsFinnhub (metric.epsGrowth*)
-    const cached = cacheGetFund("finnhub:"+symbol);
-    return cached ? cached.epsGrowth : null;
-  }
-  return fetchEpsGrowthFMP(symbol);
-}
-
-// ---------------------------------------------------------------
-// Build scored pool from normalized fundamentals
-// ---------------------------------------------------------------
-function rawToRecord(company, fund){
-  return {
-    symbol: company.symbol,
-    name: company.name || company.symbol,
-    country: company.country,
-    sector: company.sector || "—",
-    exchange: fund.exchange || "—",
-    price: fund.price,
-    mcap: fund.mcap || 0,
-    pb: fund.pb, pe: fund.pe, ps: fund.ps, pcf: fund.pcf,
-    ebitdaYield: fund.ebitdaYield,
-    divYield: fund.divYield || 0,
-    shareholderYield: fund.shareholderYield || 0,
-    mom3: fund.mom3 || 0,
-    mom6: fund.mom6 || 0,
-    epsGrowth: fund.epsGrowth ?? null,
-    dataSource: fund.source || state.dataSource,
-  };
-}
-
 function percentileRank(value, sortedAsc, betterWhenLower){
   if(value===null || value===undefined) return 50;
   const n = sortedAsc.length;
@@ -450,46 +84,7 @@ function scorePool(records){
 }
 
 // ---------------------------------------------------------------
-// Budget estimation (les appels Wikipedia sont hors quota FMP)
-// ---------------------------------------------------------------
-function estimateBudget(){
-  const nCountries = state.countries.size;
-  const perCandidate = 5; // quote/price, ratios, key-metrics, momentum, cash-flow — pareil sur les 2 sources
-  let total = nCountries*state.poolSize*perCandidate;
-  if(state.strategy === "all_stocks_growth" && state.dataSource==="fmp") total += nCountries*state.poolSize*1;
-  return total;
-}
-
-function updateBudgetUI(){
-  const bar = document.getElementById("budgetBar");
-  const warn = document.getElementById("budgetWarn");
-  if(state.dataSource === "snapshot"){
-    document.getElementById("budgetNum").textContent = "—";
-    bar.classList.remove("over");
-    warn.textContent = snapshotCache
-      ? `Snapshot chargé (généré le ${new Date(snapshotCache.generatedAt).toLocaleString('fr-FR')}) — ${snapshotCache.count} titres, aucun appel réseau au lancement.`
-      : "Snapshot pas encore chargé — sera lu au premier lancement, aucun quota.";
-    return;
-  }
-  if(state.dataSource === "finnhub"){
-    document.getElementById("budgetNum").textContent = "—";
-    bar.classList.remove("over");
-    warn.textContent = "Finnhub : 60 requêtes/minute (clé gratuite distincte de FMP), pas de quota journalier fixe.";
-    return;
-  }
-  const n = estimateBudget();
-  document.getElementById("budgetNum").textContent = n;
-  if(n>250){
-    bar.classList.add("over");
-    warn.textContent = "⚠ dépasse le quota gratuit quotidien — réduisez le nombre de pays ou la profondeur";
-  }else{
-    bar.classList.remove("over");
-    warn.textContent = "";
-  }
-}
-
-// ---------------------------------------------------------------
-// Main run
+// Chargement et filtrage du snapshot local
 // ---------------------------------------------------------------
 let snapshotCache = null;
 async function loadSnapshot(){
@@ -510,7 +105,7 @@ async function loadSnapshot(){
   return json;
 }
 
-async function runScreeningFromSnapshot(){
+async function runScreening(){
   const runBtn = document.getElementById("runBtn");
   const progressTxt = document.getElementById("progressTxt");
   runBtn.disabled = true;
@@ -539,7 +134,6 @@ async function runScreeningFromSnapshot(){
       poolCount: records.length,
       universeCount: records.length,
       countries: countries,
-      dataSource: "snapshot",
       snapshotGeneratedAt: snap.generatedAt,
       ts: Date.now(),
     };
@@ -557,155 +151,10 @@ async function runScreeningFromSnapshot(){
   }
 }
 
-async function runScreening(){
-  if(state.dataSource === "snapshot"){
-    return runScreeningFromSnapshot();
-  }
-  if(state.dataSource === "fmp"){
-    const apiKey = document.getElementById("apiKey").value.trim() || getApiKey();
-    if(!apiKey){
-      toast("Entrez d'abord votre clé API Financial Modeling Prep, ou passez sur la source Finnhub (réglages avancés).");
-      return;
-    }
-    setApiKey(apiKey);
-    updateKeyStatus();
-  }else if(state.dataSource === "finnhub"){
-    const fhKey = document.getElementById("finnhubKey").value.trim() || getFinnhubKey();
-    if(!fhKey){
-      toast("Entrez d'abord ta clé API Finnhub (gratuite sur finnhub.io/register), dans les réglages avancés.");
-      return;
-    }
-    setFinnhubKey(fhKey);
-  }
-
-  const runBtn = document.getElementById("runBtn");
-  runBtn.disabled = true;
-  const progressTxt = document.getElementById("progressTxt");
-  requestCount = 0;
-  quotaErrorCount = 0;
-  finnhubAccessErrorCount = 0;
-
-  try{
-    const countries = [...state.countries];
-    if(countries.length===0){ toast("Sélectionnez au moins un pays."); runBtn.disabled=false; return; }
-
-    progressTxt.textContent = "Récupération de la composition réelle des indices (Wikipedia)…";
-    const indexLists = await Promise.all(countries.map(c=>
-      fetchIndexConstituents(c).catch(err=>{
-        toast(`Échec de récupération de l'indice pour ${countryMeta(c)?.name||c} : ${err.message}`);
-        return [];
-      })
-    ));
-
-    let candidates = [];
-    countries.forEach((c,i)=>{
-      const full = indexLists[i];
-      const sample = sampleCandidates(full, state.poolSize).map(s=>({...s, country:c}));
-      candidates.push(...sample);
-    });
-
-    // dédoublonnage
-    const seen = new Set();
-    candidates = candidates.filter(c=>{
-      if(!c.symbol || seen.has(c.symbol)) return false;
-      seen.add(c.symbol); return true;
-    });
-
-    if(candidates.length===0){
-      toast("Aucun titre récupéré. Vérifiez la connexion à Wikipedia ou réessayez.");
-      runBtn.disabled=false; progressTxt.textContent="";
-      return;
-    }
-
-    progressTxt.textContent = `Récupération des fondamentaux — 0/${candidates.length}`;
-    let done = 0;
-    const concurrency = 6;
-    const emptyFund = {price:null, exchange:"—", mcap:0, pb:null, pe:null, ps:null, pcf:null, ebitdaYield:null, divYield:0, shareholderYield:0, mom3:0, mom6:0, epsGrowth:null};
-    const funds = await runPool(candidates, concurrency, async (c)=>{
-      const f = await fetchFundamentals(c.symbol).catch(()=>emptyFund);
-      done++;
-      progressTxt.textContent = `Récupération des fondamentaux — ${done}/${candidates.length}`;
-      return f;
-    });
-
-    let records = candidates.map((c,i)=>rawToRecord(c, funds[i]));
-
-    // filtre capitalisation minimum (appliqué côté client, après récupération des cotations)
-    records = records.filter(r => r.mcap===0 || r.mcap >= state.mcapFloor);
-
-    if(state.strategy === "all_stocks_growth"){
-      progressTxt.textContent = "Récupération de la croissance des bénéfices…";
-      const growths = await runPool(records, concurrency, (c)=>fetchEpsGrowth(c.symbol).catch(()=>null));
-      records.forEach((rec,i)=>{ rec.epsGrowth = growths[i]; });
-    }
-
-    saveCache();
-
-    if(records.length===0){
-      toast("Aucun titre ne passe le filtre de capitalisation minimum sur cet échantillon. Réessayez ou abaissez le seuil.");
-      runBtn.disabled=false; progressTxt.textContent="";
-      return;
-    }
-
-    // Diagnostic qualité des données : si presque aucun candidat n'a de ratio exploitable,
-    // le classement serait vide ou trompeur (tout le monde à égalité au rang neutre 50).
-    const withData = records.filter(r => r.pb!==null || r.pe!==null || r.ps!==null || r.pcf!==null || r.ebitdaYield!==null || r.divYield>0);
-    if(withData.length === 0){
-      if(state.dataSource === "fmp" && quotaErrorCount > records.length){
-        toast(`Quota FMP journalier dépassé (${quotaErrorCount} appels rejetés sur ${requestCount}). Le quota gratuit (250/jour) se réinitialise le lendemain — réessaie demain, réduis l'échantillon, ou passe sur la source Finnhub (réglages avancés).`);
-      }else if(state.dataSource === "finnhub" && finnhubAccessErrorCount > records.length/2){
-        toast(`Finnhub bloque l'accès à ce marché sur le plan gratuit (couverture limitée aux bourses américaines). Reste sur FMP pour les titres internationaux, ou limite Finnhub aux États-Unis.`);
-      }else if(state.dataSource === "finnhub"){
-        toast(`Aucune donnée exploitable via Finnhub pour cet échantillon — vérifie ta clé Finnhub, ou que le format de ticker (ex. ${records[0].symbol}) est bien reconnu par Finnhub pour cette bourse.`);
-      }else{
-        toast(`Aucune donnée fondamentale exploitable pour les ${records.length} titres de cet échantillon. FMP ne renvoie probablement rien pour ce format de ticker sur ton plan — vérifie une URL manuellement, ex. ratios-ttm?symbol=${records[0].symbol}`);
-      }
-      runBtn.disabled=false; progressTxt.textContent="";
-      return;
-    }
-    if(withData.length < records.length * 0.5){
-      toast(`Attention : seulement ${withData.length}/${records.length} titres ont des données fondamentales exploitables. Le classement peut être peu fiable pour cet échantillon.`);
-    }
-
-    records = scorePool(records);
-    const strat = STRATEGIES[state.strategy];
-    const selected = strat.select(records, state.resultCount);
-
-    state.lastResults = selected;
-    state.lastRunMeta = {
-      strategy: state.strategy,
-      poolCount: records.length,
-      universeCount: indexLists.reduce((s,l)=>s+l.length,0),
-      countries: countries,
-      dataSource: state.dataSource,
-      ts: Date.now(),
-    };
-    state.sortCol = "rank"; state.sortDir = "asc";
-    renderResults();
-    const anchor = document.getElementById("results-anchor");
-    if(anchor && anchor.scrollIntoView) anchor.scrollIntoView({behavior:"smooth", block:"start"});
-    if(state.dataSource === "finnhub"){
-      progressTxt.textContent = `Terminé — ${requestCount} requêtes Finnhub utilisées (hors quota FMP).`;
-    }else{
-      progressTxt.textContent = quotaErrorCount>0
-        ? `Terminé — ${requestCount} requêtes FMP (dont ${quotaErrorCount} rejetées pour quota dépassé).`
-        : `Terminé — ${requestCount} requêtes FMP utilisées (Wikipedia hors quota).`;
-    }
-  }catch(err){
-    console.error(err);
-    toast("Erreur : " + err.message);
-    progressTxt.textContent = "";
-  }finally{
-    runBtn.disabled = false;
-  }
-}
-
 // ---------------------------------------------------------------
-// Rendering
+// Formatage
 // ---------------------------------------------------------------
-// fmtPct : pour les ratios exprimés en fraction par l'API (ex. dividendYieldTTM = 0.0065 => 0,65%)
 function fmtPct(v){ return (v===null||v===undefined) ? "—" : (v*100>=0?"+":"")+(v*100).toFixed(1)+"%"; }
-// fmtMom : le endpoint stock-price-change de FMP renvoie déjà des pourcentages (ex. 5.23 => 5,23%), pas des fractions
 function fmtMom(v){ return (v===null||v===undefined) ? "—" : (v>=0?"+":"")+v.toFixed(1)+"%"; }
 function fmtNum(v, d=1){ return (v===null||v===undefined) ? "—" : v.toFixed(d); }
 function fmtMcap(v){
@@ -716,6 +165,9 @@ function fmtMcap(v){
   return v.toString();
 }
 
+// ---------------------------------------------------------------
+// Rendu UI
+// ---------------------------------------------------------------
 function renderStrategyCards(){
   const grid = document.getElementById("strategyGrid");
   grid.innerHTML = "";
@@ -733,7 +185,6 @@ function renderStrategyCards(){
       state.strategy = id;
       document.querySelectorAll(".strategy-card").forEach(el=>el.classList.remove("active"));
       card.classList.add("active");
-      updateBudgetUI();
     });
     grid.appendChild(card);
   });
@@ -751,7 +202,6 @@ function renderZonesAndCountries(){
       const allIn = z.countries.every(c=>state.countries.has(c));
       z.countries.forEach(c=> allIn ? state.countries.delete(c) : state.countries.add(c));
       renderCountryList();
-      updateBudgetUI();
     });
     zoneRow.appendChild(chip);
   });
@@ -770,7 +220,6 @@ function renderCountryList(){
       if(e.target.checked) state.countries.add(c.code); else state.countries.delete(c.code);
       item.classList.toggle("checked", e.target.checked);
       document.getElementById("countryCount").textContent = state.countries.size;
-      updateBudgetUI();
     });
     list.appendChild(item);
   });
@@ -840,13 +289,10 @@ function renderResults(){
   const strat = STRATEGIES[state.lastRunMeta.strategy];
   title.textContent = `${strat.name} — ${state.lastResults.length} entreprises`;
   const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
-  const srcLabel = state.lastRunMeta.dataSource === "snapshot" ? "Snapshot local"
-    : state.lastRunMeta.dataSource === "finnhub" ? "Finnhub" : "Financial Modeling Prep";
-  meta.innerHTML = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · source : ${srcLabel} · ${new Date(state.lastRunMeta.ts).toLocaleString('fr-FR')}`;
+  meta.innerHTML = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
   exportBtn.style.display = "inline-block";
 
   let rows = [...state.lastResults];
-  // apply sort
   if(state.sortCol !== "rank"){
     rows.sort((a,b)=>{
       const av = a[state.sortCol], bv = b[state.sortCol];
@@ -880,7 +326,7 @@ function renderResults(){
     <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length}">
       <div class="detail-grid">
         <div class="detail-item"><div class="k">Secteur</div><div class="v">${s.sector}</div></div>
-        <div class="detail-item"><div class="k">Bourse</div><div class="v">${s.exchange}</div></div>
+        <div class="detail-item"><div class="k">Bourse</div><div class="v">${s.exchange||'—'}</div></div>
         <div class="detail-item"><div class="k">Prix</div><div class="v">${fmtNum(s.price,2)}</div></div>
         <div class="detail-item"><div class="k">P/E <span class="r">rang ${s.rank_pe}</span></div><div class="v">${fmtNum(s.pe)}</div></div>
         <div class="detail-item"><div class="k">P/B <span class="r">rang ${s.rank_pb}</span></div><div class="v">${fmtNum(s.pb)}</div></div>
@@ -892,7 +338,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">Score composite</div><div class="v">${s.vc2Score} / 600</div></div>
         <div class="detail-item"><div class="k">Percentile composite</div><div class="v">${s.vc2Rank} / 100</div></div>
       </div>
-      <div class="detail-note">Rangs percentiles calculés sur l'univers criblé de ${state.lastRunMeta.poolCount} entreprises (pas l'ensemble du marché mondial). Une valeur manquante reçoit un rang neutre de 50, conformément à la méthode du livre.</div>
+      <div class="detail-note">Rangs percentiles calculés sur l'univers filtré de ${state.lastRunMeta.poolCount} entreprises. Une valeur manquante reçoit un rang neutre de 50, conformément à la méthode du livre.</div>
     </td></tr>`;
   });
   html += `</tbody></table>`;
@@ -932,21 +378,12 @@ function exportCSV(){
   URL.revokeObjectURL(url);
 }
 
-// ---------------------------------------------------------------
-// misc UI
-// ---------------------------------------------------------------
 function toast(msg){
   const t = document.createElement("div");
   t.className = "toast";
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(()=>t.remove(), 4200);
-}
-
-function updateKeyStatus(){
-  const k = getApiKey();
-  document.getElementById("keyDot").classList.toggle("ok", !!k);
-  document.getElementById("keyStatusTxt").textContent = k ? "Clé enregistrée localement" : "Aucune clé enregistrée";
 }
 
 // ---------------------------------------------------------------
@@ -956,44 +393,10 @@ function init(){
   const versionEl = document.getElementById("appVersion");
   if(versionEl) versionEl.textContent = APP_VERSION;
 
-  document.getElementById("dataSource").value = state.dataSource;
-
   renderStrategyCards();
   renderZonesAndCountries();
   renderNPicker();
   renderMethodology();
-  updateBudgetUI();
-
-  const savedKey = getApiKey();
-  if(savedKey) document.getElementById("apiKey").value = savedKey;
-  updateKeyStatus();
-
-  const savedFinnhubKey = getFinnhubKey();
-  if(savedFinnhubKey) document.getElementById("finnhubKey").value = savedFinnhubKey;
-
-  document.getElementById("apiKey").addEventListener("change", (e)=>{
-    setApiKey(e.target.value.trim());
-    updateKeyStatus();
-  });
-
-  document.getElementById("finnhubKey").addEventListener("change", (e)=>{
-    setFinnhubKey(e.target.value.trim());
-  });
-
-  document.getElementById("dataSource").addEventListener("change", (e)=>{
-    state.dataSource = e.target.value;
-    document.getElementById("fmpKeyField").style.display = state.dataSource==="fmp" ? "block" : "none";
-    document.getElementById("finnhubKeyField").style.display = state.dataSource==="finnhub" ? "block" : "none";
-    updateBudgetUI();
-  });
-
-  document.getElementById("poolSize").addEventListener("input", (e)=>{
-    state.poolSize = parseInt(e.target.value,10);
-    document.getElementById("poolVal").textContent = state.poolSize;
-    updateBudgetUI();
-  });
-  document.getElementById("poolVal").textContent = state.poolSize;
-  document.getElementById("poolSize").value = state.poolSize;
 
   document.getElementById("mcapFloor").addEventListener("change", (e)=>{
     state.mcapFloor = parseInt(e.target.value,10);
@@ -1001,11 +404,6 @@ function init(){
 
   document.getElementById("runBtn").addEventListener("click", runScreening);
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
-  document.getElementById("clearCacheBtn").addEventListener("click", ()=>{
-    cache = {fund:{}, screen:{}, index:{}};
-    saveCache();
-    toast("Cache local vidé.");
-  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

@@ -2,30 +2,10 @@
    LE GRAND LIVRE — data.js
    Définitions des stratégies (fidèles à What Works on Wall Street,
    4e édition, J. O'Shaughnessy) + référentiel pays/zones.
+   Les données proviennent uniquement de data-snapshot.json (scraper
+   Python local) — voir app.js et scraper/README.md.
    =================================================================== */
 
-// ---------------------------------------------------------------------------
-// Univers de titres — DYNAMIQUE, via Wikipedia (aucun ticker écrit à la main).
-// Le plan gratuit FMP bloque le screener et la liste globale de titres
-// ("Restricted Endpoint"), mais les endpoints PAR TITRE fonctionnent bien
-// (quote, ratios-ttm, key-metrics-ttm, stock-price-change,
-// cash-flow-statement-ttm). On récupère donc la vraie composition des
-// grands indices directement depuis Wikipedia (API CORS-friendly via
-// origin=*), puis on interroge FMP titre par titre sur un échantillon
-// (contrainte de quota : 250 requêtes/jour ≈ 50 titres/run).
-// ---------------------------------------------------------------------------
-const INDEX_SOURCES = {
-  US: {indexName:"S&P 500",        page:"List of S&P 500 companies", suffix:""},
-  CA: {indexName:"S&P/TSX 60",     page:"S&P/TSX 60",                suffix:".TO"},
-  GB: {indexName:"FTSE 100",       page:"FTSE 100 Index",            suffix:".L"},
-  FR: {indexName:"CAC 40",         page:"CAC 40",                    suffix:".PA"},
-  DE: {indexName:"DAX",            page:"DAX",                       suffix:".DE"},
-  CH: {indexName:"SMI",            page:"Swiss Market Index",        suffix:".SW"},
-  NL: {indexName:"AEX",            page:"AEX index",                 suffix:".AS"},
-  JP: {indexName:"Nikkei 225",     page:"Nikkei 225",                suffix:".T"},
-};
-
-// ---------- Pays disponibles (uniquement ceux couverts par INDEX_SOURCES) ----------
 const COUNTRIES = [
   {code:"US", name:"États-Unis", flag:"🇺🇸", zone:"na"},
   {code:"CA", name:"Canada", flag:"🇨🇦", zone:"na"},
@@ -72,47 +52,6 @@ function flagHTML(code){
 }
 
 // ---------- Alias de champs API (les noms exacts varient selon les versions FMP) ----------
-const FIELD_ALIASES = {
-  pb:      ["priceToBookRatioTTM","priceBookValueRatioTTM","pbRatioTTM","priceToBookRatio"],
-  pe:      ["priceToEarningsRatioTTM","peRatioTTM","priceEarningsRatioTTM","peRatio"],
-  ps:      ["priceToSalesRatioTTM","priceSalesRatioTTM","psRatioTTM","priceToSalesRatio"],
-  pcf:     ["priceToOperatingCashFlowRatioTTM","priceCashFlowRatioTTM","pocfRatioTTM","priceToFreeCashFlowsRatioTTM"],
-  evEbitda:["enterpriseValueMultipleTTM","evToEbitdaTTM","evEbitdaTTM","enterpriseValueOverEBITDATTM"],
-  divYield:["dividendYieldTTM","dividendYielPercentageTTM","dividendYieldPercentageTTM","dividendYielTTM"],
-  buyback: ["commonStockRepurchasedTTM","purchasesOfCommonStockTTM","commonStockRepurchased"],
-  mcap:    ["marketCap","marketCapTTM"],
-  epsGrowth:["epsgrowth","epsGrowth","netIncomeGrowth"],
-};
-
-const FINNHUB_ALIASES = {
-  pe: ["peTTM","peBasicExclExtraTTM","peExclExtraTTM","peInclExtraTTM","peNormalizedAnnual"],
-  pb: ["pbAnnual","pbQuarterly","pb"],
-  ps: ["psTTM","psAnnual","psQuarterly"],
-  pcf: ["pfcfShareTTM","pcfShareTTM","pfcfShareAnnual"],
-  evEbitda: ["currentEv/EbitdaTTM","evEbitdaTTM","enterpriseValueEbitdaTTM","currentEV/EBITDATTM"],
-  divYield: ["currentDividendYieldTTM","dividendYieldIndicatedAnnual","dividendYield5Y"],
-  mom3: ["13WeekPriceReturnDaily"],
-  mom6: ["26WeekPriceReturnDaily"],
-  mcap: ["marketCapitalization"], // en MILLIONS chez Finnhub — à multiplier par 1e6
-  epsGrowth: ["epsGrowth3Y","epsGrowth5Y","epsGrowthTTMYoy","epsGrowthQuarterlyYoy"],
-};
-
-function pick(obj, keys){
-  if(!obj) return null;
-  for(const k of keys){
-    if(obj[k]!==undefined && obj[k]!==null && !Number.isNaN(obj[k])) return obj[k];
-  }
-  return null;
-}
-
-// ===================================================================
-// STRATÉGIES
-// Chaque stratégie définit :
-//  - universe: filtre de base (capitalisation etc, appliqué au screener)
-//  - factors: liste des facteurs de valorisation composités (Value Composite)
-//  - select(pool): fonction qui prend le pool scoré et retourne les élus
-// ===================================================================
-
 const STRATEGIES = {
 
   trending_value: {

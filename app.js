@@ -2,7 +2,7 @@
    LE GRAND LIVRE — app.js
    =================================================================== */
 
-const APP_VERSION = "v2.1.1";
+const APP_VERSION = "v2.1.2";
 
 const FMP_BASE = "https://financialmodelingprep.com/stable";
 
@@ -875,7 +875,7 @@ function renderResults(){
       <td class="num">${fmtNum(s.ps)}</td>
       <td class="num ${s.shareholderYield>=0?'pos':'neg'}">${fmtPct(s.shareholderYield)}</td>
       <td class="num">${fmtMcap(s.mcap)}</td>
-      <td class="num">${cm?cm.flag:s.country||'—'}</td>
+      <td class="num">${cm?cm.flag+' '+cm.code:s.country||'—'}</td>
     </tr>
     <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length}">
       <div class="detail-grid">

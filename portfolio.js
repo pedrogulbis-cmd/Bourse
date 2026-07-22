@@ -192,6 +192,7 @@ function renderHoldingsTable(rows){
     wrap.innerHTML = `<div class="empty-state"><div class="big">Portefeuille vide</div>Va sur le screener, clique le bouton "+" à côté d'une entreprise pour l'ajouter ici.</div>`;
     return;
   }
+  const otherPortfolios = pfGetPortfolios().filter(p=>p.id !== pfGetActivePortfolioId());
   let html = `<table class="holdings"><thead><tr>
     <th>Titre</th><th class="num">Qté</th><th class="num">Prix d'achat</th><th>Date d'achat</th>
     <th class="num">Prix actuel</th><th class="num">Valeur (€)</th><th class="num">+/- value (€)</th><th class="num">Analystes</th><th></th>
@@ -210,7 +211,10 @@ function renderHoldingsTable(rows){
       <td class="num">${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *'}</td>
       <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
       <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
-      <td><button class="remove-btn" data-remove-id="${r.id}" title="Retirer du portefeuille">✕</button></td>
+      <td class="row-actions">
+        ${otherPortfolios.length ? `<button class="move-btn" data-move-id="${r.id}" title="Déplacer vers un autre portefeuille">⇄</button>` : ''}
+        <button class="remove-btn" data-remove-id="${r.id}" title="Retirer du portefeuille">✕</button>
+      </td>
     </tr>`;
   });
   html += `</tbody></table>`;
@@ -229,6 +233,54 @@ function renderHoldingsTable(rows){
         renderPortfolio();
       }
     });
+  });
+
+  wrap.querySelectorAll("[data-move-id]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      openMoveHoldingModal(btn.dataset.moveId);
+    });
+  });
+}
+
+function openMoveHoldingModal(holdingId){
+  const fromId = pfGetActivePortfolioId();
+  const holding = pfGetHoldings(fromId).find(h=>h.id===holdingId);
+  const targets = pfGetPortfolios().filter(p=>p.id !== fromId);
+  if(!holding || targets.length === 0) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Déplacer ${holding.name}</h3>
+      <div class="modal-sub">${holding.symbol} — choisis le portefeuille de destination</div>
+      <div class="modal-field">
+        <label>Portefeuille de destination</label>
+        <select id="moveTarget" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px 10px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.88rem;">
+          ${targets.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="moveCancel">Annuler</button>
+        <button class="btn-confirm" id="moveConfirm">Déplacer</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector("#moveCancel").addEventListener("click", close);
+  overlay.querySelector("#moveConfirm").addEventListener("click", ()=>{
+    const toId = overlay.querySelector("#moveTarget").value;
+    const result = pfMoveHolding(holdingId, fromId, toId);
+    if(result.ok){
+      toast(result.message);
+      close();
+      renderPortfolio();
+    } else {
+      toast("Échec : " + result.message);
+    }
   });
 }
 
@@ -585,7 +637,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.0.0";
+  if(versionEl) versionEl.textContent = "v6.1.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

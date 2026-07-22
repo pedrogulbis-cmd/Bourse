@@ -146,6 +146,25 @@ function pfIsHeld(symbol, portfolioId){
   return pfGetHoldings(portfolioId).some(h=>h.symbol===symbol);
 }
 
+/**
+ * Déplace une position d'un portefeuille à un autre (ex. erreur de saisie :
+ * ajoutée en CTO alors que c'était en PEA). Conserve toutes ses données
+ * (prix, date, devise...) telles quelles. Retourne {ok, message}.
+ */
+function pfMoveHolding(holdingId, fromPortfolioId, toPortfolioId){
+  if(fromPortfolioId === toPortfolioId) return {ok:false, message:"Portefeuille de destination identique à l'origine."};
+  const store = pfLoadStore();
+  const from = store.portfolios.find(p=>p.id===fromPortfolioId);
+  const to = store.portfolios.find(p=>p.id===toPortfolioId);
+  if(!from || !to) return {ok:false, message:"Portefeuille introuvable."};
+  const idx = from.holdings.findIndex(h=>h.id===holdingId);
+  if(idx === -1) return {ok:false, message:"Position introuvable."};
+  const [holding] = from.holdings.splice(idx, 1);
+  to.holdings.push(holding);
+  pfSaveStore(store);
+  return {ok:true, message:`${holding.name} déplacé vers "${to.name}".`};
+}
+
 // ---------------------------------------------------------------
 // Historique de valeur — un point par jour maximum, par portefeuille.
 // ---------------------------------------------------------------

@@ -421,6 +421,9 @@ table.holdings td.num.neg{color:var(--oxide-bright);}
 .analyst-badge.none{color:var(--ink-faint);}
 .remove-btn{background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:0.9rem;padding:2px 6px;}
 .remove-btn:hover{color:var(--oxide-bright);}
+.row-actions{display:flex;gap:2px;white-space:nowrap;}
+.move-btn{background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:0.95rem;padding:2px 6px;}
+.move-btn:hover{color:var(--brass-bright);}
 
 @media(max-width:820px){
   table.holdings{font-size:0.76rem;}

@@ -318,8 +318,28 @@ td.addcol{text-align:center;width:36px;}
 .pf-summary .card .val.pos{color:var(--verdigris-bright);}
 .pf-summary .card .val.neg{color:var(--oxide-bright);}
 
-.chart-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;}
+.io-row{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap;}
+.btn-io{
+  background:var(--panel);border:1px solid var(--hairline-bright);color:var(--ink-dim);
+  padding:9px 16px;border-radius:4px;font-size:0.8rem;cursor:pointer;transition:.12s;
+}
+.btn-io:hover{border-color:var(--brass-bright);color:var(--brass-bright);}
+
+.chart-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px;}
 .chart-controls .field{min-width:160px;}
+.chip-row{display:flex;gap:8px;flex-wrap:wrap;}
+.chip-check{
+  display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--hairline-bright);
+  border-radius:20px;padding:6px 14px;font-size:0.8rem;color:var(--ink-dim);cursor:pointer;transition:.12s;
+}
+.chip-check:has(input:checked){border-color:var(--brass-bright);color:var(--brass-bright);background:rgba(201,162,75,0.08);}
+.chip-check input{accent-color:var(--brass);cursor:pointer;}
+.quick-range-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.quick-range-btn{
+  background:var(--panel);border:1px solid var(--hairline-bright);color:var(--ink-faint);
+  padding:5px 11px;border-radius:4px;font-size:0.74rem;cursor:pointer;transition:.12s;
+}
+.quick-range-btn:hover, .quick-range-btn.active{border-color:var(--brass-bright);color:var(--brass-bright);}
 .chart-wrap{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:16px;margin-bottom:28px;}
 .chart-wrap canvas{width:100%!important;max-height:320px;}
 .chart-empty{text-align:center;padding:40px 20px;color:var(--ink-faint);font-size:0.85rem;}
@@ -337,6 +357,17 @@ table.holdings td{padding:9px 10px;white-space:nowrap;}
 table.holdings td.num{font-family:'IBM Plex Mono',monospace;text-align:right;color:var(--ink-dim);}
 table.holdings td.num.pos{color:var(--verdigris-bright);}
 table.holdings td.num.neg{color:var(--oxide-bright);}
+
+.analyst-badge{
+  display:inline-block;padding:2px 8px;border-radius:3px;font-size:0.72rem;font-weight:600;
+  font-family:'IBM Plex Mono',monospace;white-space:nowrap;
+}
+.analyst-badge.strong-buy{background:rgba(91,138,122,0.18);color:var(--verdigris-bright);}
+.analyst-badge.buy{background:rgba(91,138,122,0.10);color:var(--verdigris-bright);}
+.analyst-badge.neutral{background:rgba(232,227,211,0.08);color:var(--ink-faint);}
+.analyst-badge.sell{background:rgba(200,110,50,0.10);color:var(--oxide-bright);}
+.analyst-badge.strong-sell{background:rgba(200,110,50,0.18);color:var(--oxide-bright);}
+.analyst-badge.none{color:var(--ink-faint);}
 .remove-btn{background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:0.9rem;padding:2px 6px;}
 .remove-btn:hover{color:var(--oxide-bright);}
 

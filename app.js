@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v5.1.0";
+const APP_VERSION = "v5.2.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -293,8 +293,15 @@ const COLS = [
   {key:"ps", label:"P/S", num:true},
   {key:"shareholderYield", label:"Rend. Act.", num:true},
   {key:"mcap", label:"Cap.", num:true},
+  {key:"analystLabel", label:"Analystes", num:true},
   {key:"country", label:"Pays", num:true},
 ];
+
+function analystBadgeHTML(label){
+  if(!label) return '<span class="analyst-badge none">—</span>';
+  const cls = label.toLowerCase().replace(' ','-'); // "Strong Buy" -> "strong-buy"
+  return `<span class="analyst-badge ${cls}">${label}</span>`;
+}
 
 function renderResults(){
   const container = document.getElementById("resultsContainer");
@@ -350,6 +357,7 @@ function renderResults(){
       <td class="num">${fmtNum(s.ps)}</td>
       <td class="num ${s.shareholderYield>=0?'pos':'neg'}">${fmtPct(s.shareholderYield)}</td>
       <td class="num">${fmtMcap(s.mcap)}</td>
+      <td class="num">${analystBadgeHTML(s.analystLabel)}</td>
       <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}</td>
       <td class="addcol">${renderAddBtn(s)}</td>
     </tr>
@@ -367,6 +375,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">— dont dividende</div><div class="v">${fmtPct(s.divYield)}</div></div>
         <div class="detail-item"><div class="k">Score composite</div><div class="v">${s.vc2Score} / 600</div></div>
         <div class="detail-item"><div class="k">Percentile composite</div><div class="v">${s.vc2Rank} / 100</div></div>
+        <div class="detail-item"><div class="k">Note des analystes</div><div class="v">${analystBadgeHTML(s.analystLabel)}</div></div>
         <div class="detail-item"><div class="k">ROE</div><div class="v">${s.roe!=null?fmtPct(s.roe):'—'}</div></div>
         <div class="detail-item"><div class="k">Marge d'exploitation</div><div class="v">${s.opMargin!=null?fmtPct(s.opMargin):'—'}</div></div>
         <div class="detail-item"><div class="k">Croissance CA (12M)</div><div class="v">${s.revenueGrowth!=null?fmtPct(s.revenueGrowth):'—'}</div></div>
@@ -407,10 +416,10 @@ function renderResults(){
 
 function exportCSV(){
   if(!state.lastResults.length) return;
-  const headers = ["rank","symbol","isin","name","country","sector","price","mcap","vc2Score","vc2Rank","mom3","mom6","pe","pb","ps","pcf","ebitdaYield","divYield","shareholderYield"];
+  const headers = ["rank","symbol","isin","name","country","sector","price","mcap","vc2Score","vc2Rank","mom3","mom6","pe","pb","ps","pcf","ebitdaYield","divYield","shareholderYield","analystLabel"];
   let csv = headers.join(",")+"\n";
   state.lastResults.forEach((s,i)=>{
-    const row = [i+1, s.symbol, s.isin||"", `"${(s.name||"").replace(/"/g,'""')}"`, s.country, s.sector, s.price, s.mcap, s.vc2Score, s.vc2Rank, s.mom3, s.mom6, s.pe, s.pb, s.ps, s.pcf, s.ebitdaYield, s.divYield, s.shareholderYield];
+    const row = [i+1, s.symbol, s.isin||"", `"${(s.name||"").replace(/"/g,'""')}"`, s.country, s.sector, s.price, s.mcap, s.vc2Score, s.vc2Rank, s.mom3, s.mom6, s.pe, s.pb, s.ps, s.pcf, s.ebitdaYield, s.divYield, s.shareholderYield, s.analystLabel||""];
     csv += row.map(v=>v===null||v===undefined?"":v).join(",")+"\n";
   });
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});

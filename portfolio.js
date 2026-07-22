@@ -50,6 +50,11 @@ function fmtPctSigned(v){
   if(v===null||v===undefined||Number.isNaN(v)) return "—";
   return (v>=0?"+":"") + v.toFixed(1) + "%";
 }
+function analystBadgeHTML(label){
+  if(!label) return '<span class="analyst-badge none">—</span>';
+  const cls = label.toLowerCase().replace(' ','-');
+  return `<span class="analyst-badge ${cls}">${label}</span>`;
+}
 
 async function loadIndexHistory(){
   try{
@@ -127,7 +132,7 @@ function renderHoldingsTable(rows){
   }
   let html = `<table class="holdings"><thead><tr>
     <th>Titre</th><th class="num">Qté</th><th class="num">Prix d'achat</th><th>Date d'achat</th>
-    <th class="num">Prix actuel</th><th class="num">Valeur</th><th class="num">+/- value</th><th></th>
+    <th class="num">Prix actuel</th><th class="num">Valeur</th><th class="num">+/- value</th><th class="num">Analystes</th><th></th>
   </tr></thead><tbody>`;
   rows.forEach(r=>{
     const cm = countryMeta(r.country);
@@ -140,6 +145,7 @@ function renderHoldingsTable(rows){
       <td class="num">${r.currentPrice!=null?fmtEUR(r.currentPrice):'—'}</td>
       <td class="num">${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *'}</td>
       <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
+      <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
       <td><button class="remove-btn" data-remove-id="${r.id}" title="Retirer du portefeuille">✕</button></td>
     </tr>`;
   });
@@ -177,71 +183,111 @@ async function renderChart(){
   const canvas = document.getElementById("pfChart");
   const emptyMsg = document.getElementById("chartEmptyMsg");
   const startInput = document.getElementById("chartStartDate");
-  const benchmarkKey = document.getElementById("benchmarkSelect").value;
+  const benchmarkKeys = [...document.querySelectorAll('#benchmarkChips input:checked')].map(el=>el.value);
 
-  if(!startInput.value && history.length){
-    startInput.value = history[0].date;
+  const idxHist = benchmarkKeys.length ? await loadIndexHistory() : null;
+
+  if(!startInput.value){
+    if(history.length) startInput.value = history[0].date;
+    else {
+      const d = new Date(); d.setFullYear(d.getFullYear()-1);
+      startInput.value = d.toISOString().slice(0,10);
+    }
   }
-  const startDate = startInput.value || (history[0] && history[0].date) || new Date().toISOString().slice(0,10);
+  const startDate = startInput.value;
   const filteredPf = history.filter(p=>p.date >= startDate);
+  const hasPortfolioLine = filteredPf.length >= 1;
 
-  if(filteredPf.length < 2){
+  // Choix des labels (axe des dates) : si au moins un indice est sélectionné,
+  // on utilise SA plage de dates (bien plus riche que l'historique du
+  // portefeuille, qui ne remonte qu'à quand on a commencé à suivre) — le
+  // portefeuille se superpose en pointillé partiel là où il a des données.
+  // Sans aucun indice sélectionné, on retombe sur les dates du portefeuille.
+  let labels = [];
+  let referenceSeries = null;
+  const missing = [];
+  const benchSeriesByKey = {};
+
+  for(const key of benchmarkKeys){
+    const series = idxHist && idxHist.indices ? idxHist.indices[key] : null;
+    if(!series || !series.length){ missing.push(BENCHMARK_LABELS[key]); continue; }
+    const sorted = [...series].sort((a,b)=>a.date.localeCompare(b.date)).filter(p=>p.date >= startDate);
+    if(sorted.length < 2){ missing.push(BENCHMARK_LABELS[key]); continue; }
+    benchSeriesByKey[key] = sorted;
+    if(!referenceSeries || sorted.length > referenceSeries.length) referenceSeries = sorted;
+  }
+  if(missing.length){
+    toast(`Pas assez d'historique pour : ${missing.join(', ')} (index-history.json absent, incomplet, ou période trop ancienne).`);
+  }
+
+  if(referenceSeries){
+    labels = referenceSeries.map(p=>p.date);
+  } else if(hasPortfolioLine){
+    labels = filteredPf.map(p=>p.date);
+  }
+
+  if(labels.length < 2){
     canvas.style.display = "none";
     emptyMsg.style.display = "block";
-    emptyMsg.textContent = history.length===0
-      ? "Aucun historique pour l'instant — reviens après avoir ajouté des positions et laissé passer au moins un jour pour voir la courbe se dessiner."
-      : "Pas encore assez de points sur cette période pour tracer une courbe (un seul point enregistré jusqu'ici). Reviens dans les prochains jours.";
+    emptyMsg.textContent = (history.length===0 && benchmarkKeys.length===0)
+      ? "Ajoute des positions et/ou coche un indice de comparaison ci-dessus pour voir un graphique."
+      : "Rien à afficher sur cette période — élargis la plage de dates ou coche un indice.";
     if(chartInstance){ chartInstance.destroy(); chartInstance = null; }
     return;
   }
   canvas.style.display = "block";
   emptyMsg.style.display = "none";
 
-  const labels = filteredPf.map(p=>p.date);
-  const pfBase = filteredPf[0].totalValue;
-  const pfIndexed = filteredPf.map(p => pfBase>0 ? (p.totalValue/pfBase*100) : 100);
+  const datasets = [];
 
-  const datasets = [{
-    label: "Portefeuille (base 100)",
-    data: pfIndexed,
-    borderColor: "#C9A24B",
-    backgroundColor: "rgba(201,162,75,0.08)",
-    fill: true,
-    tension: 0.15,
-    pointRadius: 3,
-  }];
+  if(hasPortfolioLine){
+    const pfSorted = [...filteredPf].sort((a,b)=>a.date.localeCompare(b.date));
+    const pfBase = pfSorted[0].totalValue;
+    // valeur du portefeuille à la date la plus proche <= d, ou null si on n'a
+    // pas encore de données à ce moment-là (avant le début du suivi)
+    const findPf = (date) => {
+      let best = null;
+      for(const p of pfSorted){ if(p.date > date) break; best = p; }
+      return best;
+    };
+    const pfIndexed = labels.map(d => {
+      const p = findPf(d);
+      return p ? (pfBase>0 ? p.totalValue/pfBase*100 : 100) : null;
+    });
+    datasets.push({
+      label: "Portefeuille (base 100)",
+      data: pfIndexed,
+      borderColor: "#C9A24B",
+      backgroundColor: "rgba(201,162,75,0.08)",
+      fill: true,
+      tension: 0.15,
+      pointRadius: 3,
+      spanGaps: false,
+    });
+  }
 
-  if(benchmarkKey !== "none"){
-    const idxHist = await loadIndexHistory();
-    const series = idxHist && idxHist.indices ? idxHist.indices[benchmarkKey] : null;
-    if(series && series.length){
-      // aligne chaque date du portefeuille sur le point d'indice le plus proche (à défaut d'une correspondance exacte)
-      const seriesSorted = [...series].sort((a,b)=>a.date.localeCompare(b.date));
-      const findClosest = (date) => {
-        let best = seriesSorted[0];
-        for(const pt of seriesSorted){ if(pt.date > date) break; best = pt; }
-        return best;
-      };
-      const benchStartPt = findClosest(startDate);
-      const benchBase = benchStartPt ? benchStartPt.close : null;
-      if(benchBase){
-        const benchIndexed = labels.map(d => {
-          const pt = findClosest(d);
-          return pt ? (pt.close/benchBase*100) : null;
-        });
-        datasets.push({
-          label: `${BENCHMARK_LABELS[benchmarkKey]} (base 100)`,
-          data: benchIndexed,
-          borderColor: "#5B8A7A",
-          backgroundColor: "transparent",
-          borderDash: [5,4],
-          tension: 0.15,
-          pointRadius: 0,
-        });
-      }
-    } else {
-      toast(`Pas d'historique disponible pour ${BENCHMARK_LABELS[benchmarkKey]} (index-history.json absent ou incomplet).`);
-    }
+  const benchColors = {FR:"#5B8A7A", EU:"#8B7CB6", US:"#C9704B", WORLD:"#4F8FBF"};
+  for(const key of Object.keys(benchSeriesByKey)){
+    const sorted = benchSeriesByKey[key];
+    const findClosest = (date) => {
+      let best = sorted[0];
+      for(const pt of sorted){ if(pt.date > date) break; best = pt; }
+      return best;
+    };
+    const benchBase = findClosest(startDate).close;
+    const benchIndexed = labels.map(d => {
+      const pt = findClosest(d);
+      return pt ? (pt.close/benchBase*100) : null;
+    });
+    datasets.push({
+      label: `${BENCHMARK_LABELS[key]} (base 100)`,
+      data: benchIndexed,
+      borderColor: benchColors[key] || "#5B8A7A",
+      backgroundColor: "transparent",
+      borderDash: [5,4],
+      tension: 0.15,
+      pointRadius: 0,
+    });
   }
 
   if(chartInstance) chartInstance.destroy();
@@ -269,10 +315,29 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.1.0";
+  if(versionEl) versionEl.textContent = "v5.2.0";
   renderPortfolio();
-  document.getElementById("chartStartDate").addEventListener("change", renderPortfolio);
-  document.getElementById("benchmarkSelect").addEventListener("change", renderChart);
+  document.getElementById("chartStartDate").addEventListener("change", renderChart);
+  document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener("change", renderChart);
+  });
+  document.querySelectorAll('.quick-range-btn').forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const today = new Date();
+      let start;
+      switch(btn.dataset.range){
+        case "ytd": start = new Date(today.getFullYear(), 0, 1); break;
+        case "1y": start = new Date(today); start.setFullYear(start.getFullYear()-1); break;
+        case "3y": start = new Date(today); start.setFullYear(start.getFullYear()-3); break;
+        case "5y": start = new Date(today); start.setFullYear(start.getFullYear()-5); break;
+        default: start = today;
+      }
+      document.getElementById("chartStartDate").value = start.toISOString().slice(0,10);
+      document.querySelectorAll('.quick-range-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      renderChart();
+    });
+  });
 
   document.getElementById("exportBtn").addEventListener("click", ()=>{
     pfDownloadExport();

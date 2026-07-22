@@ -126,13 +126,18 @@ async function renderPortfolio(){
     const currency = currencyForCountry(h.country);
     if(currency !== "EUR" && (!fxRates || fxRates[currency] == null)) missingFx.add(currency);
 
+    // Le prix d'achat a pu être saisi soit dans la devise native du titre,
+    // soit directement en euros (courtier qui convertit à l'achat) — voir
+    // h.priceCurrency, choisi au moment de l'ajout. On ne convertit QUE si
+    // besoin.
+    const purchaseCcy = h.priceCurrency || currency; // repli : ancien holding sans ce champ -> devise native, comme avant
     const costBasisNative = h.quantity * h.purchasePrice;
     const currentValueNative = currentPrice!=null ? h.quantity * currentPrice : null;
-    const costBasis = toEUR(costBasisNative, currency, fxRates);
+    const costBasis = purchaseCcy === "EUR" ? costBasisNative : toEUR(costBasisNative, currency, fxRates);
     const currentValue = currentValueNative!=null ? toEUR(currentValueNative, currency, fxRates) : null;
     const gain = currentValue!=null ? currentValue - costBasis : null;
     const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
-    return { ...h, live, currency, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct };
+    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct };
   });
 
   if(missingFx.size){
@@ -195,10 +200,11 @@ function renderHoldingsTable(rows){
     const cm = countryMeta(r.country);
     const gainClass = r.gain==null ? "" : (r.gain>=0 ? "pos" : "neg");
     const ccySuffix = r.currency && r.currency !== "EUR" ? ` ${r.currency}` : " €";
+    const purchaseCcySuffix = r.purchaseCcy && r.purchaseCcy !== "EUR" ? ` ${r.purchaseCcy}` : " €";
     html += `<tr>
       <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
       <td class="num">${r.quantity}</td>
-      <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${ccySuffix}</td>
+      <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
       <td>${r.purchaseDate}</td>
       <td class="num">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:'—'}</td>
       <td class="num">${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *'}</td>
@@ -352,8 +358,15 @@ async function renderChart(){
           anyHeld = true;
           const s = seriesBySymbol[h.symbol];
           const pt = s ? findClosest(s, date) : null;
-          const price = pt ? pt.close : h.purchasePrice; // repli sur le prix d'achat si le titre manque à l'historique
-          const priceEUR = toEUR(price, currencyForCountry(h.country), fxRates);
+          let priceEUR;
+          if(pt){
+            // prix historique réel (holdings-history.json) — toujours dans la devise native du titre
+            priceEUR = toEUR(pt.close, currencyForCountry(h.country), fxRates);
+          } else {
+            // repli sur le prix d'achat — respecte la devise choisie à l'ajout
+            const purchaseCcy = h.priceCurrency || currencyForCountry(h.country);
+            priceEUR = purchaseCcy === "EUR" ? h.purchasePrice : toEUR(h.purchasePrice, currencyForCountry(h.country), fxRates);
+          }
           total += h.quantity * priceEUR;
         }
         return anyHeld ? { date, totalValue: total } : null;
@@ -513,7 +526,7 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.8.0";
+  if(versionEl) versionEl.textContent = "v5.9.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{

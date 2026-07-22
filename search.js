@@ -107,6 +107,8 @@ function renderResults(matches, query){
 
 function openAddToPortfolioModal(record){
   const today = new Date().toISOString().slice(0,10);
+  const nativeCcy = currencyForCountry(record.country);
+  const hasChoice = nativeCcy !== "EUR";
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
@@ -123,7 +125,15 @@ function openAddToPortfolioModal(record){
       </div>
       <div class="modal-field">
         <label>Prix d'achat (${record.price!=null?'prix actuel du snapshot par défaut':'prix inconnu, à renseigner'})</label>
-        <input type="number" id="pfPrice" value="${record.price!=null?record.price:''}" min="0" step="any">
+        <div style="display:flex;gap:8px;">
+          <input type="number" id="pfPrice" value="${record.price!=null?record.price:''}" min="0" step="any" style="flex:1;">
+          ${hasChoice ? `
+          <select id="pfPriceCcy" style="width:90px;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;">
+            <option value="${nativeCcy}">${nativeCcy}</option>
+            <option value="EUR">EUR</option>
+          </select>` : `<span style="align-self:center;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;font-size:0.85rem;padding:0 6px;">EUR</span>`}
+        </div>
+        ${hasChoice ? `<div style="font-size:0.7rem;color:var(--ink-faint);margin-top:5px;">Choisis "EUR" si ton courtier a converti et prélevé directement en euros.</div>` : ''}
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" id="pfCancel">Annuler</button>
@@ -140,12 +150,14 @@ function openAddToPortfolioModal(record){
     const qty = parseFloat(overlay.querySelector("#pfQty").value);
     const price = parseFloat(overlay.querySelector("#pfPrice").value);
     const date = overlay.querySelector("#pfDate").value;
+    const priceCcySel = overlay.querySelector("#pfPriceCcy");
+    const priceCurrency = priceCcySel ? priceCcySel.value : "EUR";
     if(!qty || qty<=0){ toast("Nombre d'actions invalide."); return; }
     if(!price || price<=0){ toast("Prix d'achat invalide."); return; }
     if(!date){ toast("Date invalide."); return; }
     pfAddHolding({
       symbol: record.symbol, name: record.name, country: record.country, isin: record.isin || null,
-      quantity: qty, purchasePrice: price, purchaseDate: date,
+      quantity: qty, purchasePrice: price, purchaseDate: date, priceCurrency,
     });
     toast(`${record.name} ajouté au portefeuille.`);
     close();
@@ -170,7 +182,7 @@ function doSearch(){
 let debounceTimer = null;
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.7.0";
+  if(versionEl) versionEl.textContent = "v5.9.0";
 
   const statusEl = document.getElementById("searchStatus");
   statusEl.textContent = "Chargement de l'univers…";

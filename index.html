@@ -213,6 +213,7 @@ table.results thead th{
   white-space:nowrap;
 }
 table.results thead th:hover{color:var(--brass-bright);}
+table.results thead th.num{text-align:right;}
 table.results thead th.sorted{color:var(--brass-bright);}
 table.results tbody tr{border-bottom:1px solid var(--hairline);cursor:pointer;transition:background .1s;}
 table.results tbody tr:hover{background:var(--panel);}
@@ -222,6 +223,7 @@ td.rank{font-family:'Fraunces',serif;color:var(--brass-bright);font-weight:600;}
 td.name{white-space:normal;}
 td.name .tkr{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);}
 td.name .cname{display:block;font-size:0.76rem;color:var(--ink-faint);max-width:220px;overflow:hidden;text-overflow:ellipsis;}
+td.name .isin{display:block;font-size:0.68rem;color:var(--ink-faint);opacity:0.65;font-family:'IBM Plex Mono',monospace;letter-spacing:0.02em;}
 td.num{font-family:'IBM Plex Mono',monospace;text-align:right;color:var(--ink-dim);}
 td.num.pos{color:var(--verdigris-bright);}
 td.num.neg{color:var(--oxide-bright);}
@@ -365,7 +367,7 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
 
 </div>
 
-<script src="data.js?v=3.0.0"></script>
-<script src="app.js?v=3.0.0"></script>
+<script src="data.js?v=4.1.0"></script>
+<script src="app.js?v=4.1.0"></script>
 </body>
 </html>

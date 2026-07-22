@@ -181,6 +181,72 @@ const STRATEGIES = {
       return leaders.filter(s=>s.mom3>med3 && s.mom6>med6).sort((a,b)=>b.shareholderYield-a.shareholderYield).slice(0,n);
     }
   },
+
+  william_higgon: {
+    id: "william_higgon",
+    name: "William Higgon",
+    short: "Small/mid caps décotées, rentables et en croissance",
+    stampReturn: null,
+    stampYears: null,
+    factors: ["pe","pcf","roe","opMargin","revenueGrowth"],
+    description: "Inspirée de l'approche de William Higgons, gérant de fonds réputé pour son travail sur les small et mid caps décotées (notamment via les fonds Indépendance et Expansion). Contrairement aux stratégies du livre d'O'Shaughnessy, ce n'est pas un composite de percentiles : chaque critère est un filtre strict, appliqué tel quel. Le résultat est ensuite trié par P/E croissant (les moins chères en tête).",
+    rules: [
+      "1. Capitalisation ≤ 10 Md (small/mid cap)",
+      "2. P/E ≤ 12",
+      "3. P/CF < 10 (si la donnée est disponible)",
+      "4. ROE (rentabilité des fonds propres) ≥ 9 %",
+      "5. Marge d'exploitation ≥ 4 % (5 % visé, 4 % toléré)",
+      "6. Chiffre d'affaires en croissance sur les 12 derniers mois",
+      "7. Trier par P/E croissant, retenir les N premiers",
+    ],
+    select(pool, n){
+      const filtered = pool.filter(s=>
+        s.mcap != null && s.mcap <= 10e9 &&
+        s.pe != null && s.pe > 0 && s.pe <= 12 &&
+        (s.pcf == null || s.pcf < 10) &&
+        s.roe != null && s.roe >= 0.09 &&
+        s.opMargin != null && s.opMargin >= 0.04 &&
+        s.revenueGrowth != null && s.revenueGrowth > 0
+      );
+      return filtered.sort((a,b)=>a.pe-b.pe).slice(0,n);
+    }
+  },
+
+  higgons_v2: {
+    id: "higgons_v2",
+    name: "HiggonsV2",
+    short: "Higgons affiné : marge stricte + filtre anti-sous-performance",
+    stampReturn: null,
+    stampYears: null,
+    factors: ["pe","pcf","roe","opMargin","revenueGrowth","mom6"],
+    description: "Version affinée de la stratégie William Higgon, basée sur une lecture plus détaillée de sa méthode (source : article Les Daubasses, « Les clés de la réussite du meilleur gérant français »). Deux différences principales avec la V1 : la marge d'exploitation est exigée à 5% strict (pas de tolérance à 4%), et un filtre de momentum écarte les titres qui se sont fortement effondrés — Higgons se méfie d'une chute de cours sans nouvelle publiée, qui trahit souvent une information négative pas encore publique. Le tri se fait par P/CF croissant, le critère de valorisation qu'il privilégie réellement (le PER n'étant qu'un second choix, plus volatil).",
+    rules: [
+      "1. Capitalisation ≤ 10 Md — small/mid cap, cœur de cible du fonds",
+      "2. P/E ≤ 12",
+      "3. P/CF < 10 (si la donnée est disponible) — critère de valorisation privilégié",
+      "4. ROE (proxy du ROCE) ≥ 9 %",
+      "5. Marge d'exploitation ≥ 5 % strict",
+      "6. Chiffre d'affaires en croissance sur les 12 derniers mois",
+      "7. Exclusion : momentum 6 mois ≤ −20 % (évite les titres qui s'effondrent sans raison connue)",
+      "8. Trier par P/CF croissant (P/E en repli si P/CF indisponible), retenir les N premiers",
+    ],
+    select(pool, n){
+      const filtered = pool.filter(s=>
+        s.mcap != null && s.mcap <= 10e9 &&
+        s.pe != null && s.pe > 0 && s.pe <= 12 &&
+        (s.pcf == null || s.pcf < 10) &&
+        s.roe != null && s.roe >= 0.09 &&
+        s.opMargin != null && s.opMargin >= 0.05 &&
+        s.revenueGrowth != null && s.revenueGrowth > 0 &&
+        (s.mom6 == null || s.mom6 > -20)
+      );
+      return filtered.sort((a,b)=>{
+        const av = a.pcf != null ? a.pcf : a.pe;
+        const bv = b.pcf != null ? b.pcf : b.pe;
+        return av - bv;
+      }).slice(0,n);
+    }
+  },
 };
 
 // ---------- utils stats ----------
@@ -199,4 +265,4 @@ function topDeciles(pool, numDeciles){
 }
 
 // expose méthodologie triée dans l'ordre d'affichage souhaité
-const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders"];
+const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders","william_higgon","higgons_v2"];

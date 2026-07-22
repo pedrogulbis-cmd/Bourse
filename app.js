@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v3.0.0";
+const APP_VERSION = "v4.1.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -179,7 +179,7 @@ function renderStrategyCards(){
     card.innerHTML = `
       <h3>${s.name}</h3>
       <p>${s.short}</p>
-      <div class="stamp"><b>${s.stampReturn}</b><span class="yrs">${s.stampYears}</span></div>
+      ${s.stampReturn?`<div class="stamp"><b>${s.stampReturn}</b><span class="yrs">${s.stampYears}</span></div>`:''}
     `;
     card.addEventListener("click", ()=>{
       state.strategy = id;
@@ -250,7 +250,7 @@ function renderMethodology(){
     const div = document.createElement("div");
     div.className = "method-item";
     div.innerHTML = `
-      <h3>${s.name} <span class="stamp"><b>${s.stampReturn}</b><span class="yrs">${s.stampYears}</span></span></h3>
+      <h3>${s.name} ${s.stampReturn?`<span class="stamp"><b>${s.stampReturn}</b><span class="yrs">${s.stampYears}</span></span>`:''}</h3>
       <p>${s.description}</p>
       <ul class="rules">${s.rules.map(r=>`<li>${r}</li>`).join("")}</ul>
     `;
@@ -259,17 +259,17 @@ function renderMethodology(){
 }
 
 const COLS = [
-  {key:"rank", label:"#"},
+  {key:"rank", label:"#", num:true},
   {key:"symbol", label:"Titre"},
-  {key:"vc2Score", label:"Score"},
-  {key:"mom6", label:"Mom. 6M"},
-  {key:"mom3", label:"Mom. 3M"},
-  {key:"pe", label:"P/E"},
-  {key:"pb", label:"P/B"},
-  {key:"ps", label:"P/S"},
-  {key:"shareholderYield", label:"Rend. Act."},
-  {key:"mcap", label:"Cap."},
-  {key:"country", label:"Pays"},
+  {key:"vc2Score", label:"Score", num:true},
+  {key:"mom6", label:"Mom. 6M", num:true},
+  {key:"mom3", label:"Mom. 3M", num:true},
+  {key:"pe", label:"P/E", num:true},
+  {key:"pb", label:"P/B", num:true},
+  {key:"ps", label:"P/S", num:true},
+  {key:"shareholderYield", label:"Rend. Act.", num:true},
+  {key:"mcap", label:"Cap.", num:true},
+  {key:"country", label:"Pays", num:true},
 ];
 
 function renderResults(){
@@ -303,7 +303,7 @@ function renderResults(){
 
   let html = `<table class="results"><thead><tr>`;
   COLS.forEach(c=>{
-    html += `<th data-key="${c.key}" class="${state.sortCol===c.key?'sorted':''}">${c.label}</th>`;
+    html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted':''}">${c.label}</th>`;
   });
   html += `</tr></thead><tbody>`;
 
@@ -312,7 +312,7 @@ function renderResults(){
     const cm = countryMeta(s.country);
     html += `<tr data-symbol="${s.symbol}">
       <td class="rank">${rank}</td>
-      <td class="name"><span class="tkr">${cm?flagHTML(s.country)+' ':''}${s.symbol}</span><span class="cname">${s.name}</span></td>
+      <td class="name"><span class="tkr">${cm?flagHTML(s.country)+' ':''}${s.symbol}</span><span class="cname">${s.name}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
       <td class="num"><span class="score-pill">${s.vc2Score}</span></td>
       <td class="num ${s.mom6>=0?'pos':'neg'}">${fmtMom(s.mom6)}</td>
       <td class="num ${s.mom3>=0?'pos':'neg'}">${fmtMom(s.mom3)}</td>
@@ -337,6 +337,9 @@ function renderResults(){
         <div class="detail-item"><div class="k">— dont dividende</div><div class="v">${fmtPct(s.divYield)}</div></div>
         <div class="detail-item"><div class="k">Score composite</div><div class="v">${s.vc2Score} / 600</div></div>
         <div class="detail-item"><div class="k">Percentile composite</div><div class="v">${s.vc2Rank} / 100</div></div>
+        <div class="detail-item"><div class="k">ROE</div><div class="v">${s.roe!=null?fmtPct(s.roe):'—'}</div></div>
+        <div class="detail-item"><div class="k">Marge d'exploitation</div><div class="v">${s.opMargin!=null?fmtPct(s.opMargin):'—'}</div></div>
+        <div class="detail-item"><div class="k">Croissance CA (12M)</div><div class="v">${s.revenueGrowth!=null?fmtPct(s.revenueGrowth):'—'}</div></div>
       </div>
       <div class="detail-note">Rangs percentiles calculés sur l'univers filtré de ${state.lastRunMeta.poolCount} entreprises. Une valeur manquante reçoit un rang neutre de 50, conformément à la méthode du livre.</div>
     </td></tr>`;
@@ -363,10 +366,10 @@ function renderResults(){
 
 function exportCSV(){
   if(!state.lastResults.length) return;
-  const headers = ["rank","symbol","name","country","sector","price","mcap","vc2Score","vc2Rank","mom3","mom6","pe","pb","ps","pcf","ebitdaYield","divYield","shareholderYield"];
+  const headers = ["rank","symbol","isin","name","country","sector","price","mcap","vc2Score","vc2Rank","mom3","mom6","pe","pb","ps","pcf","ebitdaYield","divYield","shareholderYield"];
   let csv = headers.join(",")+"\n";
   state.lastResults.forEach((s,i)=>{
-    const row = [i+1, s.symbol, `"${(s.name||"").replace(/"/g,'""')}"`, s.country, s.sector, s.price, s.mcap, s.vc2Score, s.vc2Rank, s.mom3, s.mom6, s.pe, s.pb, s.ps, s.pcf, s.ebitdaYield, s.divYield, s.shareholderYield];
+    const row = [i+1, s.symbol, s.isin||"", `"${(s.name||"").replace(/"/g,'""')}"`, s.country, s.sector, s.price, s.mcap, s.vc2Score, s.vc2Rank, s.mom3, s.mom6, s.pe, s.pb, s.ps, s.pcf, s.ebitdaYield, s.divYield, s.shareholderYield];
     csv += row.map(v=>v===null||v===undefined?"":v).join(",")+"\n";
   });
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});

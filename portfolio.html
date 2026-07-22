@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le Grand Livre — Portefeuille</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div>
+        <div class="mark">Le Grand Livre <em>Portefeuille</em> <span id="appVersion" style="font-size:0.55em; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; vertical-align:middle;">…</span></div>
+        <div class="sub">Suivi de tes positions, alimenté par le même snapshot que le screener</div>
+      </div>
+    </div>
+    <div class="source-tag">
+      Données stockées uniquement dans ton navigateur (localStorage) — rien n'est envoyé à un serveur.<br>
+      Les prix se mettent à jour à chaque nouveau snapshot du scraper.
+    </div>
+  </header>
+
+  <nav class="page-nav">
+    <a href="index.html" class="page-nav-item">Screener</a>
+    <a href="portfolio.html" class="page-nav-item active">→ Portefeuille</a>
+  </nav>
+
+  <!-- SUMMARY -->
+  <div class="section-title"><span class="idx">01</span> Vue d'ensemble</div>
+  <div id="pfSummary" class="pf-summary"></div>
+
+  <!-- CHART -->
+  <div class="section-title"><span class="idx">02</span> Performance dans le temps</div>
+  <div class="chart-controls">
+    <div class="field">
+      <label>Comparer à</label>
+      <select id="benchmarkSelect">
+        <option value="none">Aucun (portefeuille seul)</option>
+        <option value="FR">CAC 40 (France)</option>
+        <option value="EU">Indice européen (moyenne du pool Europe)</option>
+        <option value="US">S&amp;P 500 (États-Unis)</option>
+        <option value="WORLD">Indice monde (moyenne du pool global)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Depuis le</label>
+      <input type="date" id="chartStartDate">
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="pfChart" height="100"></canvas>
+    <div id="chartEmptyMsg" class="chart-empty" style="display:none"></div>
+  </div>
+
+  <!-- HOLDINGS -->
+  <div class="section-title"><span class="idx">03</span> Mes positions</div>
+  <div id="holdingsWrap"></div>
+
+  <footer>
+    <div>Le graphique se construit progressivement à partir d'aujourd'hui : le scraper ne fournit qu'un instantané des prix, pas d'historique. Chaque visite (ou mise à jour du snapshot) ajoute un point. Pas de données rétroactives possibles pour l'instant, ni pour tes positions ni pour les indices de comparaison.</div>
+    <div class="disclaimer">Les analyses et calculs affichés ne constituent pas des conseils en investissement. Vous êtes seul responsable de vos décisions.</div>
+  </footer>
+
+</div>
+
+<script src="data.js?v=5.0.0"></script>
+<script src="portfolio-store.js?v=5.0.0"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="portfolio.js?v=5.0.0"></script>
+</body>
+</html>

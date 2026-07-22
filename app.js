@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v4.3.0";
+const APP_VERSION = "v5.0.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -161,6 +161,12 @@ async function runScreening(){
 // ---------------------------------------------------------------
 // Formatage
 // ---------------------------------------------------------------
+function renderAddBtn(s){
+  const held = pfIsHeld(s.symbol);
+  if(held) return `<button class="add-btn added" title="Déjà dans le portefeuille" disabled>✓</button>`;
+  return `<button class="add-btn" data-add-symbol="${s.symbol}" title="Ajouter au portefeuille">+</button>`;
+}
+
 function fmtPct(v){ return (v===null||v===undefined) ? "—" : (v*100>=0?"+":"")+(v*100).toFixed(1)+"%"; }
 function fmtMom(v){ return (v===null||v===undefined) ? "—" : (v>=0?"+":"")+v.toFixed(1)+"%"; }
 function fmtNum(v, d=1){ return (v===null||v===undefined) ? "—" : v.toFixed(d); }
@@ -323,6 +329,7 @@ function renderResults(){
   COLS.forEach(c=>{
     html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted':''}">${c.label}</th>`;
   });
+  html += `<th class="addcol"></th>`;
   html += `</tr></thead><tbody>`;
 
   rows.forEach((s, i)=>{
@@ -344,8 +351,9 @@ function renderResults(){
       <td class="num ${s.shareholderYield>=0?'pos':'neg'}">${fmtPct(s.shareholderYield)}</td>
       <td class="num">${fmtMcap(s.mcap)}</td>
       <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}</td>
+      <td class="addcol">${renderAddBtn(s)}</td>
     </tr>
-    <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length}">
+    <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length+1}">
       <div class="detail-grid">
         <div class="detail-item"><div class="k">Secteur</div><div class="v">${s.sector}</div></div>
         <div class="detail-item"><div class="k">Bourse</div><div class="v">${s.exchange||'—'}</div></div>
@@ -380,10 +388,19 @@ function renderResults(){
     });
   });
   container.querySelectorAll("tbody tr[data-symbol]").forEach(tr=>{
-    tr.addEventListener("click", ()=>{
+    tr.addEventListener("click", (e)=>{
+      if(e.target.closest(".add-btn")) return; // géré séparément ci-dessous
       const sym = tr.dataset.symbol;
       const detail = container.querySelector(`tr[data-detail-for="${sym}"]`);
       if(detail) detail.style.display = detail.style.display==="none" ? "table-row" : "none";
+    });
+  });
+  container.querySelectorAll(".add-btn[data-add-symbol]").forEach(btn=>{
+    btn.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      const sym = btn.dataset.addSymbol;
+      const record = state.lastResults.find(r=>r.symbol===sym);
+      if(record) openAddToPortfolioModal(record);
     });
   });
 }
@@ -435,6 +452,57 @@ function init(){
 
   document.getElementById("runBtn").addEventListener("click", runScreening);
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
+}
+
+// ---------------------------------------------------------------
+// Modal "Ajouter au portefeuille"
+// ---------------------------------------------------------------
+function openAddToPortfolioModal(record){
+  const today = new Date().toISOString().slice(0,10);
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>${record.name}</h3>
+      <div class="modal-sub">${record.symbol}${record.isin?' · '+record.isin:''} — ajouter au portefeuille</div>
+      <div class="modal-field">
+        <label>Date d'achat</label>
+        <input type="date" id="pfDate" value="${today}" max="${today}">
+      </div>
+      <div class="modal-field">
+        <label>Nombre d'actions</label>
+        <input type="number" id="pfQty" value="1" min="0" step="any">
+      </div>
+      <div class="modal-field">
+        <label>Prix d'achat (${record.price!=null?'prix actuel du snapshot par défaut':'prix inconnu, à renseigner'})</label>
+        <input type="number" id="pfPrice" value="${record.price!=null?record.price:''}" min="0" step="any">
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="pfCancel">Annuler</button>
+        <button class="btn-confirm" id="pfConfirm">Ajouter</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector("#pfCancel").addEventListener("click", close);
+  overlay.querySelector("#pfConfirm").addEventListener("click", ()=>{
+    const qty = parseFloat(overlay.querySelector("#pfQty").value);
+    const price = parseFloat(overlay.querySelector("#pfPrice").value);
+    const date = overlay.querySelector("#pfDate").value;
+    if(!qty || qty<=0){ toast("Nombre d'actions invalide."); return; }
+    if(!price || price<=0){ toast("Prix d'achat invalide."); return; }
+    if(!date){ toast("Date invalide."); return; }
+    pfAddHolding({
+      symbol: record.symbol, name: record.name, country: record.country, isin: record.isin || null,
+      quantity: qty, purchasePrice: price, purchaseDate: date,
+    });
+    toast(`${record.name} ajouté au portefeuille.`);
+    close();
+    renderResults(); // rafraîchit le bouton + -> ✓
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

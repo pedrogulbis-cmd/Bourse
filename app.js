@@ -185,6 +185,17 @@ function renderStrategyCards(){
       state.strategy = id;
       document.querySelectorAll(".strategy-card").forEach(el=>el.classList.remove("active"));
       card.classList.add("active");
+      // Certaines stratégies (Higgons) ont un plafond de capitalisation intégré à
+      // leur filtre — si le plancher choisi est au-dessus ou trop proche de ce
+      // plafond, la stratégie ne trouverait presque plus rien. On rabaisse alors
+      // automatiquement le plancher, avec un message explicite pour ne pas
+      // surprendre silencieusement.
+      if(s.hardMcapCeiling && state.mcapFloor >= s.hardMcapCeiling){
+        state.mcapFloor = 200000000;
+        const sel = document.getElementById("mcapFloor");
+        if(sel) sel.value = "200000000";
+        toast(`${s.name} a un plafond de capitalisation intégré (≤ ${(s.hardMcapCeiling/1e9).toFixed(0)} Md) — plancher repassé à 200 M$ automatiquement.`);
+      }
     });
     grid.appendChild(card);
   });

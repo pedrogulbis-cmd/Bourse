@@ -188,6 +188,7 @@ const STRATEGIES = {
     short: "Small/mid caps décotées, rentables et en croissance",
     stampReturn: null,
     stampYears: null,
+    hardMcapCeiling: 10e9,
     factors: ["pe","pcf","roe","opMargin","revenueGrowth"],
     description: "Inspirée de l'approche de William Higgons, gérant de fonds réputé pour son travail sur les small et mid caps décotées (notamment via les fonds Indépendance et Expansion). Contrairement aux stratégies du livre d'O'Shaughnessy, ce n'est pas un composite de percentiles : chaque critère est un filtre strict, appliqué tel quel. Le résultat est ensuite trié par P/E croissant (les moins chères en tête).",
     rules: [
@@ -218,6 +219,7 @@ const STRATEGIES = {
     short: "Higgons affiné : marge stricte + filtre anti-sous-performance",
     stampReturn: null,
     stampYears: null,
+    hardMcapCeiling: 10e9,
     factors: ["pe","pcf","roe","opMargin","revenueGrowth","mom6"],
     description: "Version affinée de la stratégie William Higgon, basée sur une lecture plus détaillée de sa méthode (source : article Les Daubasses, « Les clés de la réussite du meilleur gérant français »). Deux différences principales avec la V1 : la marge d'exploitation est exigée à 5% strict (pas de tolérance à 4%), et un filtre de momentum écarte les titres qui se sont fortement effondrés — Higgons se méfie d'une chute de cours sans nouvelle publiée, qui trahit souvent une information négative pas encore publique. Le tri se fait par P/CF croissant, le critère de valorisation qu'il privilégie réellement (le PER n'étant qu'un second choix, plus volatil).",
     rules: [

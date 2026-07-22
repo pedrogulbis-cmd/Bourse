@@ -80,6 +80,29 @@ async function loadHoldingsHistory(){
   }
 }
 
+async function loadFxRates(){
+  try{
+    const url = "./fx-rates.json?t=" + Date.now();
+    const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
+    if(!res.ok) return null;
+    const json = await res.json();
+    return json && json.rates ? json.rates : null;
+  }catch(e){
+    return null;
+  }
+}
+
+/** Convertit un montant depuis sa devise native vers l'euro. Si le taux
+ * est inconnu (fx-rates.json absent, ou devise non couverte), retourne le
+ * montant TEL QUEL (repli permissif — mieux vaut un total légèrement faux
+ * mais visible que masquer une position entière). */
+function toEUR(amount, currency, fxRates){
+  if(amount == null) return null;
+  if(!currency || currency === "EUR") return amount;
+  if(!fxRates || fxRates[currency] == null) return amount;
+  return amount * fxRates[currency];
+}
+
 let chartInstance = null;
 
 async function renderPortfolio(){
@@ -91,19 +114,30 @@ async function renderPortfolio(){
     document.getElementById("holdingsWrap").innerHTML = `<div class="empty-state">Impossible de charger data-snapshot.json : ${err.message}</div>`;
     return;
   }
+  const fxRates = await loadFxRates();
+  const missingFx = new Set();
   const bySymbol = {};
   snap.records.forEach(r=> bySymbol[r.symbol]=r );
 
-  // ---- Calculs par position ----
+  // ---- Calculs par position (en devise native + converti en euros) ----
   const rows = holdings.map(h=>{
     const live = bySymbol[h.symbol];
     const currentPrice = live ? live.price : null;
-    const costBasis = h.quantity * h.purchasePrice;
-    const currentValue = currentPrice!=null ? h.quantity * currentPrice : null;
+    const currency = currencyForCountry(h.country);
+    if(currency !== "EUR" && (!fxRates || fxRates[currency] == null)) missingFx.add(currency);
+
+    const costBasisNative = h.quantity * h.purchasePrice;
+    const currentValueNative = currentPrice!=null ? h.quantity * currentPrice : null;
+    const costBasis = toEUR(costBasisNative, currency, fxRates);
+    const currentValue = currentValueNative!=null ? toEUR(currentValueNative, currency, fxRates) : null;
     const gain = currentValue!=null ? currentValue - costBasis : null;
     const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
-    return { ...h, live, currentPrice, costBasis, currentValue, gain, gainPct };
+    return { ...h, live, currency, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct };
   });
+
+  if(missingFx.size){
+    toast(`Taux de change manquant pour : ${[...missingFx].join(', ')} — fx-rates.json absent ou incomplet. Ces positions sont additionnées sans conversion (totaux inexacts). Lance fetch_fx_rates.py.`);
+  }
 
   const totalCost = rows.reduce((s,r)=>s+r.costBasis, 0);
   const totalValue = rows.reduce((s,r)=>s + (r.currentValue!=null ? r.currentValue : r.costBasis), 0);
@@ -114,6 +148,7 @@ async function renderPortfolio(){
   renderHoldingsTable(rows);
 
   // Enregistre un point d'historique (un seul par jour, écrasé si on revisite le même jour)
+  // — toujours en euros, cohérent avec les totaux affichés.
   if(rows.length > 0){
     pfLogHistoryPoint(totalValue, totalCost);
   }
@@ -144,17 +179,18 @@ function renderHoldingsTable(rows){
   }
   let html = `<table class="holdings"><thead><tr>
     <th>Titre</th><th class="num">Qté</th><th class="num">Prix d'achat</th><th>Date d'achat</th>
-    <th class="num">Prix actuel</th><th class="num">Valeur</th><th class="num">+/- value</th><th class="num">Analystes</th><th></th>
+    <th class="num">Prix actuel</th><th class="num">Valeur (€)</th><th class="num">+/- value (€)</th><th class="num">Analystes</th><th></th>
   </tr></thead><tbody>`;
   rows.forEach(r=>{
     const cm = countryMeta(r.country);
     const gainClass = r.gain==null ? "" : (r.gain>=0 ? "pos" : "neg");
+    const ccySuffix = r.currency && r.currency !== "EUR" ? ` ${r.currency}` : " €";
     html += `<tr>
       <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
       <td class="num">${r.quantity}</td>
-      <td class="num">${fmtEUR(r.purchasePrice)}</td>
+      <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${ccySuffix}</td>
       <td>${r.purchaseDate}</td>
-      <td class="num">${r.currentPrice!=null?fmtEUR(r.currentPrice):'—'}</td>
+      <td class="num">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:'—'}</td>
       <td class="num">${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *'}</td>
       <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
       <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
@@ -162,6 +198,9 @@ function renderHoldingsTable(rows){
     </tr>`;
   });
   html += `</tbody></table>`;
+  if(rows.some(r=>r.currency && r.currency !== "EUR")){
+    html += `<div class="detail-note" style="margin-top:10px;">Prix d'achat et prix actuel affichés dans la devise native du titre. Valeur et plus/moins-value converties en euros au taux le plus récent disponible.</div>`;
+  }
   if(rows.some(r=>r.currentPrice==null)){
     html += `<div class="detail-note" style="margin-top:10px;">* Titre absent du snapshot actuel (peut-être sorti de l'univers scrapé) — coût d'achat affiché à la place du prix live.</div>`;
   }
@@ -200,6 +239,7 @@ async function renderChart(){
 
   const idxHist = benchmarkKeys.length ? await loadIndexHistory() : null;
   const holdingsPrices = holdings.length ? await loadHoldingsHistory() : null;
+  const fxRates = holdings.length ? await loadFxRates() : null;
 
   if(!startInput.value){
     if(history.length) startInput.value = history[0].date;
@@ -241,7 +281,8 @@ async function renderChart(){
           const s = seriesBySymbol[h.symbol];
           const pt = s ? findClosest(s, date) : null;
           const price = pt ? pt.close : h.purchasePrice; // repli sur le prix d'achat si le titre manque à l'historique
-          total += h.quantity * price;
+          const priceEUR = toEUR(price, currencyForCountry(h.country), fxRates);
+          total += h.quantity * priceEUR;
         }
         return anyHeld ? { date, totalValue: total } : null;
       }).filter(Boolean);
@@ -400,7 +441,7 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.6.0";
+  if(versionEl) versionEl.textContent = "v5.7.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{

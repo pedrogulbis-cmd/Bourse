@@ -40,6 +40,17 @@ const ZONES = [
 
 function countryMeta(code){ return COUNTRIES.find(c=>c.code===code); }
 
+// Devise de cotation par pays — miroir de COUNTRY_CURRENCY côté scraper
+// (config.py). Doit rester synchronisé si de nouveaux pays sont ajoutés.
+const COUNTRY_CURRENCY = {
+  US:"USD", CA:"CAD", FR:"EUR", DE:"EUR", GB:"GBP",
+  NL:"EUR", CH:"CHF", ES:"EUR", IT:"EUR", BE:"EUR",
+  SE:"SEK", DK:"DKK", NO:"NOK", FI:"EUR", PT:"EUR",
+  AT:"EUR", IE:"EUR", JP:"JPY", AU:"AUD", HK:"HKD",
+  SG:"SGD", KR:"KRW",
+};
+function currencyForCountry(code){ return COUNTRY_CURRENCY[code] || "EUR"; }
+
 // Génère à la fois l'emoji drapeau (utilisé en mobile) et une vraie image de
 // drapeau via flagcdn.com (utilisée en desktop, où les polices d'emoji du
 // système n'affichent pas toujours les drapeaux correctement — notamment

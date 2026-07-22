@@ -24,6 +24,7 @@ const COUNTRIES = [
   {code:"PT", name:"Portugal", flag:"🇵🇹", zone:"eu"},
   {code:"AT", name:"Autriche", flag:"🇦🇹", zone:"eu"},
   {code:"IE", name:"Irlande", flag:"🇮🇪", zone:"eu"},
+  {code:"LU", name:"Luxembourg", flag:"🇱🇺", zone:"eu"},
   {code:"PL", name:"Pologne", flag:"🇵🇱", zone:"eu"},
   {code:"JP", name:"Japon", flag:"🇯🇵", zone:"apac"},
   {code:"AU", name:"Australie", flag:"🇦🇺", zone:"apac"},
@@ -34,7 +35,7 @@ const COUNTRIES = [
 
 const ZONES = [
   {id:"na", label:"Amérique du Nord", countries:["US","CA"]},
-  {id:"eu", label:"Europe", countries:["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","PL"]},
+  {id:"eu", label:"Europe", countries:["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","LU","PL"]},
   {id:"apac", label:"Asie-Pacifique", countries:["JP","AU","HK","SG","KR"]},
   {id:"world", label:"Monde (sélection large)", countries:["US","CA","GB","FR","DE","CH","NL","ES","IT","JP","AU","KR"]},
 ];
@@ -47,7 +48,7 @@ const COUNTRY_CURRENCY = {
   US:"USD", CA:"CAD", FR:"EUR", DE:"EUR", GB:"GBP",
   NL:"EUR", CH:"CHF", ES:"EUR", IT:"EUR", BE:"EUR",
   SE:"SEK", DK:"DKK", NO:"NOK", FI:"EUR", PT:"EUR",
-  AT:"EUR", IE:"EUR", JP:"JPY", AU:"AUD", HK:"HKD",
+  AT:"EUR", IE:"EUR", LU:"EUR", JP:"JPY", AU:"AUD", HK:"HKD",
   SG:"SGD", KR:"KRW", PL:"PLN",
 };
 function currencyForCountry(code){ return COUNTRY_CURRENCY[code] || "EUR"; }

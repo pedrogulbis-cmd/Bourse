@@ -15,9 +15,9 @@
 
 const BENCHMARK_ZONES = {
   FR: ["FR"],
-  EU: ["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","PL"],
+  EU: ["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","LU","PL"],
   US: ["US"],
-  WORLD: ["US","CA","FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","PL","JP","AU","HK","SG","KR"],
+  WORLD: ["US","CA","FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","LU","PL","JP","AU","HK","SG","KR"],
 };
 const BENCHMARK_LABELS = {
   FR: "CAC 40 (France)", EU: "Indice européen", US: "S&P 500 (États-Unis)", WORLD: "Indice monde",

@@ -18,7 +18,7 @@ from config import TV_MARKETS, TV_COUNTRY_NAMES, MAX_UNIVERSE_PER_COUNTRY
 # "france" (le filtre pays la rejette). Solution : interroger TOUS les
 # segments Euronext ensemble, puis classer chaque résultat par son pays
 # RÉEL plutôt que par le marché où on l'a trouvée.
-EURONEXT_COUNTRIES = {"FR", "BE", "NL", "PT", "IE", "IT"}
+EURONEXT_COUNTRIES = {"FR", "BE", "NL", "PT", "IE", "IT", "LU"}
 
 # Champs demandés à TradingView, dans l'ordre où ils reviennent dans les
 # lignes de résultat (le premier "ticker"/"name" est toujours en tête,

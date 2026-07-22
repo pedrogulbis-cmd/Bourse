@@ -60,6 +60,7 @@ TV_COUNTRY_NAMES = {
     "PT": "Portugal",
     "AT": "Austria",
     "IE": "Ireland",
+    "LU": "Luxembourg",
     "PL": "Poland",
     "JP": "Japan",
     "AU": "Australia",

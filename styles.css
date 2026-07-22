@@ -15,6 +15,23 @@
   --hairline-bright:#3E4C44;
   --stamp-navy:#2B3B4A;
 }
+:root[data-theme="light"]{
+  --paper:#F7F4EC;
+  --panel:#EFEAD9;
+  --panel-raised:#E6DFC9;
+  --ink:#2A2820;
+  --ink-dim:#5C584C;
+  --ink-faint:#8A8574;
+  --brass:#9A6B26;
+  --brass-bright:#7D5620;
+  --verdigris:#3E6B5D;
+  --verdigris-bright:#2F5548;
+  --oxide:#9A4128;
+  --oxide-bright:#82361F;
+  --hairline:#DDD5BE;
+  --hairline-bright:#C9BFA0;
+  --stamp-navy:#2B3B4A;
+}
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
 body{
@@ -51,6 +68,12 @@ header.top{
   font-size:0.72rem;color:var(--ink-faint);text-align:right;line-height:1.4;
   border-left:1px solid var(--hairline);padding-left:14px;
 }
+.theme-toggle-btn{
+  background:var(--panel);border:1px solid var(--hairline-bright);color:var(--ink-dim);
+  padding:7px 14px;border-radius:20px;font-size:0.78rem;cursor:pointer;transition:.12s;
+  align-self:center;white-space:nowrap;
+}
+.theme-toggle-btn:hover{border-color:var(--brass-bright);color:var(--brass-bright);}
 .source-tag b{color:var(--ink-dim);font-weight:600;}
 
 /* ---------- ledger rule background for sections ---------- */

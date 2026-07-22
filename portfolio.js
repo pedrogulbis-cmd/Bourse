@@ -290,6 +290,13 @@ async function renderChart(){
     });
   }
 
+  if(typeof Chart === "undefined"){
+    canvas.style.display = "none";
+    emptyMsg.style.display = "block";
+    emptyMsg.textContent = "La librairie de graphique (Chart.js) n'a pas pu se charger depuis le CDN — vérifie ta connexion ou un éventuel bloqueur de scripts, puis recharge la page.";
+    return;
+  }
+
   if(chartInstance) chartInstance.destroy();
   chartInstance = new Chart(canvas.getContext("2d"), {
     type: "line",
@@ -315,7 +322,7 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.2.0";
+  if(versionEl) versionEl.textContent = "v5.3.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{

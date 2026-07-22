@@ -363,8 +363,8 @@ td.addcol{text-align:center;width:36px;}
   padding:5px 11px;border-radius:4px;font-size:0.74rem;cursor:pointer;transition:.12s;
 }
 .quick-range-btn:hover, .quick-range-btn.active{border-color:var(--brass-bright);color:var(--brass-bright);}
-.chart-wrap{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:16px;margin-bottom:28px;}
-.chart-wrap canvas{width:100%!important;max-height:320px;}
+.chart-wrap{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:16px;margin-bottom:28px;height:340px;position:relative;}
+.chart-wrap canvas{width:100%!important;height:100%!important;}
 .chart-empty{text-align:center;padding:40px 20px;color:var(--ink-faint);font-size:0.85rem;}
 
 table.holdings{width:100%;border-collapse:collapse;font-size:0.83rem;}

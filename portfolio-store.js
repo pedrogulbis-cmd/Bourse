@@ -75,3 +75,68 @@ function pfLogHistoryPoint(totalValue, totalCost){
   try{ localStorage.setItem(PF_HISTORY_KEY, JSON.stringify(history)); }catch(e){}
   return history;
 }
+
+// ---------------------------------------------------------------
+// Export / Import — pour passer d'un appareil à l'autre. Tout reste en
+// localStorage (rien n'est synchronisé automatiquement), donc c'est le
+// seul moyen de transférer un portefeuille d'un PC à un téléphone.
+// ---------------------------------------------------------------
+function pfExportData(){
+  return {
+    exportedAt: new Date().toISOString(),
+    version: 1,
+    holdings: pfGetHoldings(),
+    history: pfGetHistory(),
+  };
+}
+
+function pfDownloadExport(){
+  const data = pfExportData();
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `portefeuille-lgl-${new Date().toISOString().slice(0,10)}.json`;
+  a.style.display = "none";
+  document.body.appendChild(a); // certains navigateurs (surtout mobiles) ignorent .click() sur un lien jamais attaché au DOM
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000); // laisse le temps au téléchargement de démarrer avant de libérer l'URL
+}
+
+/**
+ * Importe un fichier exporté précédemment. mode="replace" (défaut) écrase
+ * tout ; mode="merge" fusionne avec l'existant (les positions déjà
+ * présentes, identifiées par symbole+date+prix, ne sont pas dupliquées).
+ * Retourne {ok, message, holdingsCount}.
+ */
+function pfImportData(jsonText, mode){
+  let data;
+  try{ data = JSON.parse(jsonText); }
+  catch(e){ return {ok:false, message:"Fichier JSON invalide."}; }
+
+  if(!data || !Array.isArray(data.holdings)){
+    return {ok:false, message:"Format inattendu : pas de liste de positions trouvée."};
+  }
+
+  let holdings, history;
+  if(mode === "merge"){
+    const current = pfGetHoldings();
+    const key = h => `${h.symbol}|${h.purchaseDate}|${h.purchasePrice}|${h.quantity}`;
+    const existingKeys = new Set(current.map(key));
+    const toAdd = data.holdings.filter(h=>!existingKeys.has(key(h)));
+    holdings = [...current, ...toAdd];
+
+    const currentHist = pfGetHistory();
+    const histByDate = {}; currentHist.forEach(p=>histByDate[p.date]=p);
+    (data.history||[]).forEach(p=>{ if(!histByDate[p.date]) histByDate[p.date]=p; });
+    history = Object.values(histByDate).sort((a,b)=>a.date.localeCompare(b.date));
+  } else {
+    holdings = data.holdings;
+    history = data.history || [];
+  }
+
+  pfSaveHoldings(holdings);
+  try{ localStorage.setItem(PF_HISTORY_KEY, JSON.stringify(history)); }catch(e){}
+  return {ok:true, message:`${holdings.length} position(s) au total après import.`, holdingsCount: holdings.length};
+}

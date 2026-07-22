@@ -380,6 +380,7 @@ async function renderChart(){
     data: { labels, datasets },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { labels: { color: "#B8B3A1" } } },
       scales: {
         x: { ticks: { color: "#8C8878" }, grid: { color: "rgba(232,227,211,0.06)" } },
@@ -399,7 +400,7 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.4.0";
+  if(versionEl) versionEl.textContent = "v5.5.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{

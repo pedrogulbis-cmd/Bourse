@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="theme.js?v=5.5.0"></script>
+<title>Le Grand Livre — Recherche</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div>
+        <div class="mark">Le Grand Livre <em>Recherche</em> <span id="appVersion" style="font-size:0.55em; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; vertical-align:middle;">…</span></div>
+        <div class="sub">Cherche n'importe quel titre de l'univers scrapé, même hors des critères d'un screener</div>
+      </div>
+    </div>
+    <div class="source-tag">
+      Utile pour retrouver une action achetée il y a longtemps et l'ajouter au portefeuille,<br>
+      même si elle ne ressort dans aucune stratégie du screener.
+    </div>
+    <button id="themeToggleBtn" class="theme-toggle-btn">☀ Clair</button>
+  </header>
+
+  <nav class="page-nav">
+    <a href="index.html" class="page-nav-item">Screener</a>
+    <a href="search.html" class="page-nav-item active">Recherche</a>
+    <a href="portfolio.html" class="page-nav-item">→ Portefeuille</a>
+  </nav>
+
+  <div class="section-title"><span class="idx">01</span> Rechercher un titre</div>
+  <div class="field" style="max-width:480px;margin-bottom:20px;">
+    <input type="text" id="searchInput" placeholder="Nom, ticker, ou ISIN (ex. LVMH, EURONEXT:MC, FR0000121014)"
+      style="width:100%;background:var(--panel);border:1px solid var(--hairline-bright);color:var(--ink);padding:11px 14px;border-radius:5px;font-size:0.92rem;">
+  </div>
+
+  <div id="searchStatus" style="color:var(--ink-faint);font-size:0.82rem;margin-bottom:14px;"></div>
+  <div id="searchResults"></div>
+
+  <footer>
+    <div class="disclaimer">Les analyses et calculs affichés ne constituent pas des conseils en investissement. Vous êtes seul responsable de vos décisions.</div>
+  </footer>
+
+</div>
+
+<script src="data.js?v=5.5.0"></script>
+<script src="portfolio-store.js?v=5.5.0"></script>
+<script src="search.js?v=5.5.0"></script>
+</body>
+</html>

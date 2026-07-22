@@ -31,6 +31,7 @@ TV_MARKETS = {
     "PT": "portugal",
     "AT": "austria",
     "IE": "ireland",
+    "PL": "poland",
     "JP": "japan",
     "AU": "australia",
     "HK": "hongkong",
@@ -59,6 +60,7 @@ TV_COUNTRY_NAMES = {
     "PT": "Portugal",
     "AT": "Austria",
     "IE": "Ireland",
+    "PL": "Poland",
     "JP": "Japan",
     "AU": "Australia",
     "HK": "Hong Kong",
@@ -90,4 +92,5 @@ COUNTRY_CURRENCY = {
     "SE": "SEK", "DK": "DKK", "NO": "NOK", "FI": "EUR", "PT": "EUR",
     "AT": "EUR", "IE": "EUR", "JP": "JPY", "AU": "AUD", "HK": "HKD",
     "SG": "SGD", "KR": "KRW",
+    "PL": "PLN",
 }

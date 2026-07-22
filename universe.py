@@ -151,10 +151,14 @@ def fetch_country_stocks(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_
     for _, row in df.iterrows():
         if not row.get("ticker"):
             continue
-        expected_country = TV_COUNTRY_NAMES.get(country_code)
-        actual_country = row.get("country")
-        if expected_country and actual_country and actual_country != expected_country:
-            continue
+        # PAS de double vérification "pays réel == pays attendu" ici (contrairement
+        # à une version précédente) : beaucoup de sociétés cotées sur un marché
+        # donné sont légalement domiciliées ailleurs pour des raisons fiscales
+        # (transport maritime/offshore notamment : Global Ship Lease domiciliée à
+        # Londres mais cotée au NYSE, Euroseas en Grèce, etc.). is_primary (filtre
+        # natif de la librairie) suffit à écarter les cross-listings parasites —
+        # le marché interrogé fait foi pour "où ce titre est réellement accessible
+        # à l'achat", ce qui est ce qui compte pour l'app.
         out.append(_row_to_record(row, country_code))
 
     return out

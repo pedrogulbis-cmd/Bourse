@@ -109,12 +109,21 @@ function openAddToPortfolioModal(record){
   const today = new Date().toISOString().slice(0,10);
   const nativeCcy = currencyForCountry(record.country);
   const hasChoice = nativeCcy !== "EUR";
+  const portfolios = pfGetPortfolios();
+  const activeId = pfGetActivePortfolioId();
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal-box">
       <h3>${record.name}</h3>
       <div class="modal-sub">${record.symbol}${record.isin?' · '+record.isin:''} — ajouter au portefeuille</div>
+      ${portfolios.length > 1 ? `
+      <div class="modal-field">
+        <label>Portefeuille</label>
+        <select id="pfTarget" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px 10px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.88rem;">
+          ${portfolios.map(p=>`<option value="${p.id}" ${p.id===activeId?'selected':''}>${p.name}</option>`).join('')}
+        </select>
+      </div>` : ''}
       <div class="modal-field">
         <label>Date d'achat</label>
         <input type="date" id="pfDate" value="${today}" max="${today}">
@@ -152,14 +161,17 @@ function openAddToPortfolioModal(record){
     const date = overlay.querySelector("#pfDate").value;
     const priceCcySel = overlay.querySelector("#pfPriceCcy");
     const priceCurrency = priceCcySel ? priceCcySel.value : "EUR";
+    const targetSel = overlay.querySelector("#pfTarget");
+    const targetPortfolioId = targetSel ? targetSel.value : activeId;
     if(!qty || qty<=0){ toast("Nombre d'actions invalide."); return; }
     if(!price || price<=0){ toast("Prix d'achat invalide."); return; }
     if(!date){ toast("Date invalide."); return; }
     pfAddHolding({
       symbol: record.symbol, name: record.name, country: record.country, isin: record.isin || null,
       quantity: qty, purchasePrice: price, purchaseDate: date, priceCurrency,
-    });
-    toast(`${record.name} ajouté au portefeuille.`);
+    }, targetPortfolioId);
+    const targetName = portfolios.find(p=>p.id===targetPortfolioId)?.name || "";
+    toast(`${record.name} ajouté${targetName?` à "${targetName}"`:''}.`);
     close();
     doSearch(); // rafraîchit le bouton + -> ✓
   });
@@ -182,7 +194,7 @@ function doSearch(){
 let debounceTimer = null;
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.9.0";
+  if(versionEl) versionEl.textContent = "v6.0.0";
 
   const statusEl = document.getElementById("searchStatus");
   statusEl.textContent = "Chargement de l'univers…";

@@ -524,9 +524,69 @@ function toast(msg){
   setTimeout(()=>t.remove(), 6000);
 }
 
+function renderSwitcher(){
+  const wrap = document.getElementById("pfSwitcher");
+  const portfolios = pfGetPortfolios();
+  const activeId = pfGetActivePortfolioId();
+
+  wrap.innerHTML = portfolios.map(p => `
+    <div class="pf-tab ${p.id===activeId?'active':''}" data-pf-id="${p.id}">
+      <span class="pf-tab-label">${p.name}</span>
+      <button class="pf-menu-btn" data-pf-menu="${p.id}" title="Options">⋯</button>
+    </div>
+  `).join('') + `<button class="pf-add-btn" id="pfAddBtn">+ Nouveau portefeuille</button>`;
+
+  wrap.querySelectorAll(".pf-tab").forEach(tab=>{
+    tab.addEventListener("click", (e)=>{
+      if(e.target.closest(".pf-menu-btn")) return;
+      pfSetActivePortfolio(tab.dataset.pfId);
+      renderSwitcher();
+      renderPortfolio();
+    });
+  });
+
+  wrap.querySelectorAll("[data-pf-menu]").forEach(btn=>{
+    btn.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.pfMenu;
+      const p = portfolios.find(x=>x.id===id);
+      const action = prompt(`Portefeuille "${p.name}" — tape "renommer" ou "supprimer" :`);
+      if(!action) return;
+      const a = action.trim().toLowerCase();
+      if(a === "renommer" || a === "renomer"){
+        const newName = prompt("Nouveau nom :", p.name);
+        if(newName && newName.trim()){
+          pfRenamePortfolio(id, newName.trim());
+          renderSwitcher();
+        }
+      } else if(a === "supprimer"){
+        if(portfolios.length <= 1){
+          toast("Impossible de supprimer le dernier portefeuille restant.");
+          return;
+        }
+        if(confirm(`Supprimer définitivement "${p.name}" et toutes ses positions ?`)){
+          pfDeletePortfolio(id);
+          renderSwitcher();
+          renderPortfolio();
+        }
+      }
+    });
+  });
+
+  document.getElementById("pfAddBtn").addEventListener("click", ()=>{
+    const name = prompt("Nom du nouveau portefeuille (ex. PEA, CTO, Assurance-vie) :");
+    if(name && name.trim()){
+      pfCreatePortfolio(name.trim());
+      renderSwitcher();
+      renderPortfolio();
+    }
+  });
+}
+
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.9.0";
+  if(versionEl) versionEl.textContent = "v6.0.0";
+  renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{
@@ -563,18 +623,19 @@ function init(){
     if(!file) return;
     const reader = new FileReader();
     reader.onload = ()=>{
-      const hasExisting = pfGetHoldings().length > 0;
+      const hasExisting = pfGetPortfolios().some(p=>p.holdings.length > 0);
       let mode = "replace";
       if(hasExisting){
         mode = confirm(
           "Tu as déjà des positions enregistrées sur cet appareil.\n\n" +
-          "OK = fusionner (garde l'existant + ajoute les nouvelles positions du fichier)\n" +
+          "OK = fusionner (garde l'existant + ajoute les nouveaux portefeuilles/positions du fichier)\n" +
           "Annuler = tout remplacer par le contenu du fichier"
         ) ? "merge" : "replace";
       }
       const result = pfImportData(reader.result, mode);
       if(result.ok){
         toast(`Import réussi (${mode==='merge'?'fusion':'remplacement'}) — ${result.message}`);
+        renderSwitcher();
         renderPortfolio();
       } else {
         toast("Échec de l'import : " + result.message);

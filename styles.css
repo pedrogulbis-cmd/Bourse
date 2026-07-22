@@ -302,6 +302,24 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
 .page-nav-item:hover{color:var(--ink);}
 .page-nav-item.active{color:var(--brass-bright);border-bottom-color:var(--brass-bright);font-weight:600;}
 
+/* ---------------- Sélecteur multi-portefeuilles ---------------- */
+.pf-switcher{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 20px;}
+.pf-tab{
+  display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--hairline-bright);
+  border-radius:20px;padding:7px 8px 7px 16px;font-size:0.82rem;color:var(--ink-dim);cursor:pointer;transition:.12s;
+}
+.pf-tab:hover{border-color:var(--brass-bright);}
+.pf-tab.active{border-color:var(--brass-bright);color:var(--brass-bright);background:rgba(201,162,75,0.08);font-weight:600;}
+.pf-tab .pf-menu-btn{
+  background:none;border:none;color:inherit;opacity:0.55;cursor:pointer;font-size:0.9rem;padding:2px 6px;line-height:1;
+}
+.pf-tab .pf-menu-btn:hover{opacity:1;}
+.pf-add-btn{
+  background:var(--panel);border:1px dashed var(--hairline-bright);color:var(--ink-faint);
+  border-radius:20px;padding:7px 16px;font-size:0.82rem;cursor:pointer;transition:.12s;
+}
+.pf-add-btn:hover{border-color:var(--brass-bright);color:var(--brass-bright);}
+
 /* ---------------- Bouton "+" ajouter au portefeuille ---------------- */
 td.addcol{text-align:center;width:36px;}
 .add-btn{

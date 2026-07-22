@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v4.2.0";
+const APP_VERSION = "v4.3.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -28,6 +28,7 @@ let state = {
   countries: new Set(), // aucun pays coché par défaut
   resultCount: 25,
   mcapFloor: 1000000000,
+  liquidityFloor: null, // optionnel — null = aucun filtre appliqué
   sortCol: "rank",
   sortDir: "asc",
   lastResults: [],
@@ -117,6 +118,12 @@ async function runScreening(){
     const snap = await loadSnapshot();
     let records = snap.records.filter(r => countries.includes(r.country));
     records = records.filter(r => !r.mcap || r.mcap >= state.mcapFloor);
+    if(state.liquidityFloor){
+      // Un titre sans donnée de liquidité n'est PAS exclu par défaut — on ne
+      // veut pas punir un titre juste parce que la donnée manque, seulement
+      // écarter ceux dont on SAIT qu'ils sont peu liquides.
+      records = records.filter(r => r.avgDailyValue == null || r.avgDailyValue >= state.liquidityFloor);
+    }
 
     if(records.length === 0){
       toast("Aucun titre dans le snapshot pour cette combinaison pays/capitalisation. Vérifie que le scraper a bien couvert ces pays, ou baisse le seuil de capitalisation.");
@@ -355,6 +362,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">ROE</div><div class="v">${s.roe!=null?fmtPct(s.roe):'—'}</div></div>
         <div class="detail-item"><div class="k">Marge d'exploitation</div><div class="v">${s.opMargin!=null?fmtPct(s.opMargin):'—'}</div></div>
         <div class="detail-item"><div class="k">Croissance CA (12M)</div><div class="v">${s.revenueGrowth!=null?fmtPct(s.revenueGrowth):'—'}</div></div>
+        <div class="detail-item"><div class="k">Liquidité (valeur échangée/jour)</div><div class="v">${s.avgDailyValue!=null?fmtMcap(s.avgDailyValue):'—'}</div></div>
       </div>
       ${warnings.length ? `<div class="detail-warnings">⚠ ${warnings.join(' · ')}</div>` : ''}
       <div class="detail-note">Rangs percentiles calculés sur l'univers filtré de ${state.lastRunMeta.poolCount} entreprises. Une valeur manquante reçoit un rang neutre de 50, conformément à la méthode du livre.</div>
@@ -419,6 +427,10 @@ function init(){
 
   document.getElementById("mcapFloor").addEventListener("change", (e)=>{
     state.mcapFloor = parseInt(e.target.value,10);
+  });
+
+  document.getElementById("liquidityFloor").addEventListener("change", (e)=>{
+    state.liquidityFloor = e.target.value ? parseInt(e.target.value,10) : null;
   });
 
   document.getElementById("runBtn").addEventListener("click", runScreening);

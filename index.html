@@ -330,6 +330,16 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
             <option value="50000000000">≥ 50 Md$ (leaders de marché)</option>
           </select>
         </div>
+        <div class="field">
+          <label>Liquidité minimum — optionnel, laisser vide = aucun filtre</label>
+          <select id="liquidityFloor">
+            <option value="" selected>Aucun filtre (défaut)</option>
+            <option value="100000">≥ 100 K$ échangés / jour en moyenne</option>
+            <option value="500000">≥ 500 K$ / jour</option>
+            <option value="1000000">≥ 1 M$ / jour</option>
+            <option value="5000000">≥ 5 M$ / jour (très liquide)</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -371,7 +381,7 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
 
 </div>
 
-<script src="data.js?v=4.2.0"></script>
-<script src="app.js?v=4.2.0"></script>
+<script src="data.js?v=4.3.0"></script>
+<script src="app.js?v=4.3.0"></script>
 </body>
 </html>

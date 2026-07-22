@@ -68,6 +68,18 @@ async function loadIndexHistory(){
   }
 }
 
+async function loadHoldingsHistory(){
+  try{
+    const url = "./holdings-history.json?t=" + Date.now();
+    const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
+    if(!res.ok) return null;
+    const json = await res.json();
+    return json && json.prices ? json.prices : null;
+  }catch(e){
+    return null;
+  }
+}
+
 let chartInstance = null;
 
 async function renderPortfolio(){
@@ -180,12 +192,14 @@ function simpleAvgMomentum(records, field){
 
 async function renderChart(){
   const history = pfGetHistory();
+  const holdings = pfGetHoldings();
   const canvas = document.getElementById("pfChart");
   const emptyMsg = document.getElementById("chartEmptyMsg");
   const startInput = document.getElementById("chartStartDate");
   const benchmarkKeys = [...document.querySelectorAll('#benchmarkChips input:checked')].map(el=>el.value);
 
   const idxHist = benchmarkKeys.length ? await loadIndexHistory() : null;
+  const holdingsPrices = holdings.length ? await loadHoldingsHistory() : null;
 
   if(!startInput.value){
     if(history.length) startInput.value = history[0].date;
@@ -196,13 +210,54 @@ async function renderChart(){
   }
   const startDate = startInput.value;
   const filteredPf = history.filter(p=>p.date >= startDate);
-  const hasPortfolioLine = filteredPf.length >= 1;
 
-  // Choix des labels (axe des dates) : si au moins un indice est sélectionné,
-  // on utilise SA plage de dates (bien plus riche que l'historique du
-  // portefeuille, qui ne remonte qu'à quand on a commencé à suivre) — le
-  // portefeuille se superpose en pointillé partiel là où il a des données.
-  // Sans aucun indice sélectionné, on retombe sur les dates du portefeuille.
+  // --- Série rétroactive du portefeuille, à partir de l'historique réel de
+  // chaque action (holdings-history.json) plutôt que du simple suivi
+  // jour-par-jour depuis aujourd'hui. Si absente ou incomplète, on retombe
+  // sur le suivi local habituel.
+  let retroSeries = null;
+  const missingHoldingsPrices = [];
+  if(holdingsPrices && holdings.length){
+    const seriesBySymbol = {};
+    let richest = null;
+    for(const h of holdings){
+      const s = holdingsPrices[h.symbol];
+      if(s && s.length){
+        const sorted = [...s].sort((a,b)=>a.date.localeCompare(b.date));
+        seriesBySymbol[h.symbol] = sorted;
+        if(!richest || sorted.length > richest.length) richest = sorted;
+      } else {
+        missingHoldingsPrices.push(h.symbol);
+      }
+    }
+    if(richest){
+      const findClosest = (arr, date) => { let best=null; for(const p of arr){ if(p.date>date) break; best=p; } return best; };
+      const candidateDates = richest.map(p=>p.date).filter(d=>d >= startDate);
+      const computed = candidateDates.map(date=>{
+        let total = 0, anyHeld = false;
+        for(const h of holdings){
+          if(h.purchaseDate > date) continue; // pas encore acheté à cette date
+          anyHeld = true;
+          const s = seriesBySymbol[h.symbol];
+          const pt = s ? findClosest(s, date) : null;
+          const price = pt ? pt.close : h.purchasePrice; // repli sur le prix d'achat si le titre manque à l'historique
+          total += h.quantity * price;
+        }
+        return anyHeld ? { date, totalValue: total } : null;
+      }).filter(Boolean);
+      if(computed.length >= 2) retroSeries = computed;
+    }
+  }
+  if(missingHoldingsPrices.length){
+    toast(`Historique de prix manquant pour : ${missingHoldingsPrices.join(', ')} — relance fetch_holdings_history.py pour les inclure. Prix d'achat utilisé en repli pour ces titres.`);
+  }
+
+  const hasRetroLine = !!retroSeries;
+  const hasLocalPfLine = !hasRetroLine && filteredPf.length >= 1;
+
+  // Choix des labels (axe des dates) : priorité à la série rétroactive
+  // (la plus riche et la plus honnête), sinon un indice sélectionné, sinon
+  // le suivi local jour-par-jour.
   let labels = [];
   let referenceSeries = null;
   const missing = [];
@@ -220,9 +275,13 @@ async function renderChart(){
     toast(`Pas assez d'historique pour : ${missing.join(', ')} (index-history.json absent, incomplet, ou période trop ancienne).`);
   }
 
-  if(referenceSeries){
+  if(hasRetroLine && (!referenceSeries || retroSeries.length >= referenceSeries.length)){
+    labels = retroSeries.map(p=>p.date);
+  } else if(referenceSeries){
     labels = referenceSeries.map(p=>p.date);
-  } else if(hasPortfolioLine){
+  } else if(hasRetroLine){
+    labels = retroSeries.map(p=>p.date);
+  } else if(hasLocalPfLine){
     labels = filteredPf.map(p=>p.date);
   }
 
@@ -240,7 +299,25 @@ async function renderChart(){
 
   const datasets = [];
 
-  if(hasPortfolioLine){
+  if(hasRetroLine){
+    const sorted = [...retroSeries].sort((a,b)=>a.date.localeCompare(b.date));
+    const base = sorted[0].totalValue;
+    const findPf = (date) => { let best=null; for(const p of sorted){ if(p.date>date) break; best=p; } return best; };
+    const pfIndexed = labels.map(d => {
+      const p = findPf(d);
+      return p ? (base>0 ? p.totalValue/base*100 : 100) : null;
+    });
+    datasets.push({
+      label: "Portefeuille (base 100, historique réel)",
+      data: pfIndexed,
+      borderColor: "#C9A24B",
+      backgroundColor: "rgba(201,162,75,0.08)",
+      fill: true,
+      tension: 0.15,
+      pointRadius: 2,
+      spanGaps: false,
+    });
+  } else if(hasLocalPfLine){
     const pfSorted = [...filteredPf].sort((a,b)=>a.date.localeCompare(b.date));
     const pfBase = pfSorted[0].totalValue;
     // valeur du portefeuille à la date la plus proche <= d, ou null si on n'a
@@ -322,7 +399,7 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.3.0";
+  if(versionEl) versionEl.textContent = "v5.4.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{

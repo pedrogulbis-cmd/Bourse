@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v4.1.0";
+const APP_VERSION = "v4.2.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -321,9 +321,13 @@ function renderResults(){
   rows.forEach((s, i)=>{
     const rank = state.sortCol==="rank" ? i+1 : (state.lastResults.indexOf(s)+1);
     const cm = countryMeta(s.country);
-    html += `<tr data-symbol="${s.symbol}">
-      <td class="rank">${rank}</td>
-      <td class="name"><span class="tkr">${cm?flagHTML(s.country)+' ':''}${s.symbol}</span><span class="cname">${s.name}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
+    const warnings = strat.warn ? strat.warn(s) : [];
+    const warnBadge = warnings.length
+      ? `<span class="warn-badge" title="${warnings.join(' · ').replace(/"/g,'&quot;')}">⚠</span>`
+      : '';
+    html += `<tr data-symbol="${s.symbol}"${warnings.length ? ' class="has-warn"' : ''}>
+      <td class="rank">${rank}${warnBadge}</td>
+      <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
       <td class="num"><span class="score-pill">${s.vc2Score}</span></td>
       <td class="num ${s.mom6>=0?'pos':'neg'}">${fmtMom(s.mom6)}</td>
       <td class="num ${s.mom3>=0?'pos':'neg'}">${fmtMom(s.mom3)}</td>
@@ -352,6 +356,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">Marge d'exploitation</div><div class="v">${s.opMargin!=null?fmtPct(s.opMargin):'—'}</div></div>
         <div class="detail-item"><div class="k">Croissance CA (12M)</div><div class="v">${s.revenueGrowth!=null?fmtPct(s.revenueGrowth):'—'}</div></div>
       </div>
+      ${warnings.length ? `<div class="detail-warnings">⚠ ${warnings.join(' · ')}</div>` : ''}
       <div class="detail-note">Rangs percentiles calculés sur l'univers filtré de ${state.lastRunMeta.poolCount} entreprises. Une valeur manquante reçoit un rang neutre de 50, conformément à la méthode du livre.</div>
     </td></tr>`;
   });

@@ -72,6 +72,12 @@ const STRATEGIES = {
     select(pool, n){
       const decile1 = topDeciles(pool, 1);
       return decile1.sort((a,b)=>(b.mom6-a.mom6)).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.mom6 <= 0) w.push("Momentum 6M négatif malgré la sélection");
+      if(missingFactorCount(s) >= 3) w.push("Score basé sur des données largement incomplètes");
+      return w;
     }
   },
 
@@ -91,6 +97,11 @@ const STRATEGIES = {
     ],
     select(pool, n){
       return [...pool].sort((a,b)=>b.vc2Score-a.vc2Score).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(missingFactorCount(s) >= 3) w.push("Score basé sur des données largement incomplètes");
+      return w;
     }
   },
 
@@ -114,6 +125,11 @@ const STRATEGIES = {
       const med3 = median(pool.map(s=>s.mom3));
       const med6 = median(pool.map(s=>s.mom6));
       return top3dec.filter(s=>s.mom3>med3 && s.mom6>med6).sort((a,b)=>b.mom6-a.mom6).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.mom3 <= 0 || s.mom6 <= 0) w.push("Momentum positif seulement par rapport au pool, pas en absolu");
+      return w;
     }
   },
 
@@ -137,6 +153,12 @@ const STRATEGIES = {
       const med6 = median(pool.map(s=>s.mom6));
       return pool.filter(s => (s.epsGrowth===null || s.epsGrowth>0) && s.mom3>med3 && s.mom6>med6 && s.vc2Rank>=50)
                   .sort((a,b)=>b.mom6-a.mom6).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.epsGrowth === null || s.epsGrowth === undefined) w.push("Croissance du BPA inconnue (non filtrée)");
+      else if(s.epsGrowth < 0.02) w.push("Croissance du BPA à peine positive");
+      return w;
     }
   },
 
@@ -156,6 +178,11 @@ const STRATEGIES = {
     ],
     select(pool, n){
       return [...pool].sort((a,b)=>b.shareholderYield-a.shareholderYield).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.shareholderYield < 0.02) w.push("Rendement actionnarial faible en valeur absolue (<2%)");
+      return w;
     }
   },
 
@@ -179,6 +206,12 @@ const STRATEGIES = {
       const med3 = median(leaders.map(s=>s.mom3));
       const med6 = median(leaders.map(s=>s.mom6));
       return leaders.filter(s=>s.mom3>med3 && s.mom6>med6).sort((a,b)=>b.shareholderYield-a.shareholderYield).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.shareholderYield < 0.02) w.push("Rendement actionnarial faible en valeur absolue (<2%)");
+      if(s.mom3 <= 0 || s.mom6 <= 0) w.push("Momentum positif seulement par rapport au groupe, pas en absolu");
+      return w;
     }
   },
 
@@ -210,6 +243,15 @@ const STRATEGIES = {
         s.revenueGrowth != null && s.revenueGrowth > 0
       );
       return filtered.sort((a,b)=>a.pe-b.pe).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.pe > 10) w.push("P/E proche du plafond (12)");
+      if(s.pcf != null && s.pcf > 8) w.push("P/CF proche du plafond (10)");
+      if(s.roe < 0.11) w.push("ROE proche du plancher (9%)");
+      if(s.opMargin < 0.05) w.push("Marge d'exploitation dans la zone tolérée (4-5%)");
+      if(s.revenueGrowth < 0.02) w.push("Croissance du CA à peine positive");
+      return w;
     }
   },
 
@@ -247,6 +289,16 @@ const STRATEGIES = {
         const bv = b.pcf != null ? b.pcf : b.pe;
         return av - bv;
       }).slice(0,n);
+    },
+    warn(s){
+      const w = [];
+      if(s.pe > 10) w.push("P/E proche du plafond (12)");
+      if(s.pcf != null && s.pcf > 8) w.push("P/CF proche du plafond (10)");
+      if(s.roe < 0.11) w.push("ROE proche du plancher (9%)");
+      if(s.opMargin < 0.06) w.push("Marge d'exploitation proche du plancher strict (5%)");
+      if(s.revenueGrowth < 0.02) w.push("Croissance du CA à peine positive");
+      if(s.mom6 != null && s.mom6 <= -15) w.push("Momentum proche du seuil d'exclusion (-20%)");
+      return w;
     }
   },
 };
@@ -264,6 +316,17 @@ function topDeciles(pool, numDeciles){
   // numDeciles=1 -> garde le décile 1 (10% les moins chers) ; numDeciles=3 -> garde les 3 premiers déciles (30%)
   const lowBound = 100 - (numDeciles*10) + 1;
   return pool.filter(s=>s.vc2Rank >= lowBound);
+}
+
+// Compte combien des 6 facteurs du composite de valeur sont manquants pour un
+// titre donné (rang neutre 50 ET valeur brute null -> vraiment absent, pas
+// juste "dans la moyenne"). Sert à signaler les scores peu fiables.
+function missingFactorCount(s){
+  const factors = [
+    [s.rank_pb, s.pb], [s.rank_pe, s.pe], [s.rank_ps, s.ps],
+    [s.rank_pcf, s.pcf], [s.rank_ebitdaYield, s.ebitdaYield], [s.rank_shareholderYield, s.shareholderYield],
+  ];
+  return factors.filter(([rank, val])=> rank===50 && (val===null || val===undefined)).length;
 }
 
 // expose méthodologie triée dans l'ordre d'affichage souhaité

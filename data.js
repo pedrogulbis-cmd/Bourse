@@ -215,46 +215,6 @@ const STRATEGIES = {
     }
   },
 
-  william_higgon: {
-    id: "william_higgon",
-    name: "William Higgon",
-    short: "Small/mid caps décotées, rentables et en croissance",
-    stampReturn: null,
-    stampYears: null,
-    hardMcapCeiling: 10e9,
-    factors: ["pe","pcf","roe","opMargin","revenueGrowth"],
-    description: "Inspirée de l'approche de William Higgons, gérant de fonds réputé pour son travail sur les small et mid caps décotées (notamment via les fonds Indépendance et Expansion). Contrairement aux stratégies du livre d'O'Shaughnessy, ce n'est pas un composite de percentiles : chaque critère est un filtre strict, appliqué tel quel. Le résultat est ensuite trié par P/E croissant (les moins chères en tête).",
-    rules: [
-      "1. Capitalisation ≤ 10 Md (small/mid cap)",
-      "2. P/E ≤ 12",
-      "3. P/CF < 10 (si la donnée est disponible)",
-      "4. ROE (rentabilité des fonds propres) ≥ 9 %",
-      "5. Marge d'exploitation ≥ 4 % (5 % visé, 4 % toléré)",
-      "6. Chiffre d'affaires en croissance sur les 12 derniers mois",
-      "7. Trier par P/E croissant, retenir les N premiers",
-    ],
-    select(pool, n){
-      const filtered = pool.filter(s=>
-        s.mcap != null && s.mcap <= 10e9 &&
-        s.pe != null && s.pe > 0 && s.pe <= 12 &&
-        (s.pcf == null || s.pcf < 10) &&
-        s.roe != null && s.roe >= 0.09 &&
-        s.opMargin != null && s.opMargin >= 0.04 &&
-        s.revenueGrowth != null && s.revenueGrowth > 0
-      );
-      return filtered.sort((a,b)=>a.pe-b.pe).slice(0,n);
-    },
-    warn(s){
-      const w = [];
-      if(s.pe > 10) w.push("P/E proche du plafond (12)");
-      if(s.pcf != null && s.pcf > 8) w.push("P/CF proche du plafond (10)");
-      if(s.roe < 0.11) w.push("ROE proche du plancher (9%)");
-      if(s.opMargin < 0.05) w.push("Marge d'exploitation dans la zone tolérée (4-5%)");
-      if(s.revenueGrowth < 0.02) w.push("Croissance du CA à peine positive");
-      return w;
-    }
-  },
-
   higgons_v2: {
     id: "higgons_v2",
     name: "HiggonsV2",
@@ -330,4 +290,4 @@ function missingFactorCount(s){
 }
 
 // expose méthodologie triée dans l'ordre d'affichage souhaité
-const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders","william_higgon","higgons_v2"];
+const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders","higgons_v2"];

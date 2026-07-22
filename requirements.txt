@@ -1,0 +1,4 @@
+tradingview-screener>=3.2.0
+tqdm>=4.65
+# tvdatafeed s'installe différemment (pas un simple "pip install") :
+# pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git

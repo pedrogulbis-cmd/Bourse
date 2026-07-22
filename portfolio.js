@@ -51,6 +51,18 @@ function fmtPctSigned(v){
   return (v>=0?"+":"") + v.toFixed(1) + "%";
 }
 
+async function loadIndexHistory(){
+  try{
+    const url = "./index-history.json?t=" + Date.now();
+    const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
+    if(!res.ok) return null;
+    const json = await res.json();
+    return json && json.indices ? json : null;
+  }catch(e){
+    return null; // pas grave si absent — le graphique se dégrade proprement
+  }
+}
+
 let chartInstance = null;
 
 async function renderPortfolio(){
@@ -89,7 +101,7 @@ async function renderPortfolio(){
     pfLogHistoryPoint(totalValue, totalCost);
   }
 
-  renderChart(snap);
+  await renderChart();
 }
 
 function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions){
@@ -160,18 +172,20 @@ function simpleAvgMomentum(records, field){
   return vals.reduce((a,b)=>a+b,0)/vals.length;
 }
 
-function renderChart(snap){
+async function renderChart(){
   const history = pfGetHistory();
   const canvas = document.getElementById("pfChart");
   const emptyMsg = document.getElementById("chartEmptyMsg");
   const startInput = document.getElementById("chartStartDate");
+  const benchmarkKey = document.getElementById("benchmarkSelect").value;
+
   if(!startInput.value && history.length){
     startInput.value = history[0].date;
   }
   const startDate = startInput.value || (history[0] && history[0].date) || new Date().toISOString().slice(0,10);
-  const filtered = history.filter(p=>p.date >= startDate);
+  const filteredPf = history.filter(p=>p.date >= startDate);
 
-  if(filtered.length < 2){
+  if(filteredPf.length < 2){
     canvas.style.display = "none";
     emptyMsg.style.display = "block";
     emptyMsg.textContent = history.length===0
@@ -183,24 +197,57 @@ function renderChart(snap){
   canvas.style.display = "block";
   emptyMsg.style.display = "none";
 
-  const labels = filtered.map(p=>p.date);
-  const values = filtered.map(p=>p.totalValue);
+  const labels = filteredPf.map(p=>p.date);
+  const pfBase = filteredPf[0].totalValue;
+  const pfIndexed = filteredPf.map(p => pfBase>0 ? (p.totalValue/pfBase*100) : 100);
+
+  const datasets = [{
+    label: "Portefeuille (base 100)",
+    data: pfIndexed,
+    borderColor: "#C9A24B",
+    backgroundColor: "rgba(201,162,75,0.08)",
+    fill: true,
+    tension: 0.15,
+    pointRadius: 3,
+  }];
+
+  if(benchmarkKey !== "none"){
+    const idxHist = await loadIndexHistory();
+    const series = idxHist && idxHist.indices ? idxHist.indices[benchmarkKey] : null;
+    if(series && series.length){
+      // aligne chaque date du portefeuille sur le point d'indice le plus proche (à défaut d'une correspondance exacte)
+      const seriesSorted = [...series].sort((a,b)=>a.date.localeCompare(b.date));
+      const findClosest = (date) => {
+        let best = seriesSorted[0];
+        for(const pt of seriesSorted){ if(pt.date > date) break; best = pt; }
+        return best;
+      };
+      const benchStartPt = findClosest(startDate);
+      const benchBase = benchStartPt ? benchStartPt.close : null;
+      if(benchBase){
+        const benchIndexed = labels.map(d => {
+          const pt = findClosest(d);
+          return pt ? (pt.close/benchBase*100) : null;
+        });
+        datasets.push({
+          label: `${BENCHMARK_LABELS[benchmarkKey]} (base 100)`,
+          data: benchIndexed,
+          borderColor: "#5B8A7A",
+          backgroundColor: "transparent",
+          borderDash: [5,4],
+          tension: 0.15,
+          pointRadius: 0,
+        });
+      }
+    } else {
+      toast(`Pas d'historique disponible pour ${BENCHMARK_LABELS[benchmarkKey]} (index-history.json absent ou incomplet).`);
+    }
+  }
 
   if(chartInstance) chartInstance.destroy();
   chartInstance = new Chart(canvas.getContext("2d"), {
     type: "line",
-    data: {
-      labels,
-      datasets: [{
-        label: "Valeur du portefeuille (€)",
-        data: values,
-        borderColor: "#C9A24B",
-        backgroundColor: "rgba(201,162,75,0.08)",
-        fill: true,
-        tension: 0.15,
-        pointRadius: 3,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       plugins: { legend: { labels: { color: "#B8B3A1" } } },
@@ -210,19 +257,6 @@ function renderChart(snap){
       },
     },
   });
-}
-
-function renderBenchmarkComparison(snap, rows){
-  const zone = document.getElementById("benchmarkSelect").value;
-  const note = document.getElementById("chartEmptyMsg");
-  if(zone === "none") return;
-  const countries = BENCHMARK_ZONES[zone];
-  const benchPool = snap.records.filter(r=>countries.includes(r.country));
-  const pf6 = weightedMomentum(rows, "mom6");
-  const pf3 = weightedMomentum(rows, "mom3");
-  const b6 = simpleAvgMomentum(benchPool, "mom6");
-  const b3 = simpleAvgMomentum(benchPool, "mom3");
-  toast(`Portefeuille 6M: ${fmtPctSigned(pf6)} vs ${BENCHMARK_LABELS[zone]} 6M: ${fmtPctSigned(b6)} (moyenne simple du pool, pas un vrai niveau d'indice) · 3M: ${fmtPctSigned(pf3)} vs ${fmtPctSigned(b3)}`);
 }
 
 function toast(msg){
@@ -235,22 +269,43 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.0.0";
+  if(versionEl) versionEl.textContent = "v5.1.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderPortfolio);
-  document.getElementById("benchmarkSelect").addEventListener("change", async ()=>{
-    const holdings = pfGetHoldings();
-    if(holdings.length===0){ toast("Ajoute d'abord des positions depuis le screener."); return; }
-    try{
-      const snap = await loadSnapshot();
-      const bySymbol = {}; snap.records.forEach(r=>bySymbol[r.symbol]=r);
-      const rows = holdings.map(h=>{
-        const live = bySymbol[h.symbol];
-        const currentValue = live ? h.quantity*live.price : h.quantity*h.purchasePrice;
-        return {...h, live, currentValue};
-      });
-      renderBenchmarkComparison(snap, rows);
-    }catch(e){ toast("Erreur : " + e.message); }
+  document.getElementById("benchmarkSelect").addEventListener("change", renderChart);
+
+  document.getElementById("exportBtn").addEventListener("click", ()=>{
+    pfDownloadExport();
+    toast("Export téléchargé.");
+  });
+
+  document.getElementById("importBtn").addEventListener("click", ()=>{
+    document.getElementById("importFile").click();
+  });
+  document.getElementById("importFile").addEventListener("change", (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const hasExisting = pfGetHoldings().length > 0;
+      let mode = "replace";
+      if(hasExisting){
+        mode = confirm(
+          "Tu as déjà des positions enregistrées sur cet appareil.\n\n" +
+          "OK = fusionner (garde l'existant + ajoute les nouvelles positions du fichier)\n" +
+          "Annuler = tout remplacer par le contenu du fichier"
+        ) ? "merge" : "replace";
+      }
+      const result = pfImportData(reader.result, mode);
+      if(result.ok){
+        toast(`Import réussi (${mode==='merge'?'fusion':'remplacement'}) — ${result.message}`);
+        renderPortfolio();
+      } else {
+        toast("Échec de l'import : " + result.message);
+      }
+      e.target.value = ""; // permet de réimporter le même fichier si besoin
+    };
+    reader.readAsText(file);
   });
 }
 

@@ -348,6 +348,16 @@ td.addcol{text-align:center;width:36px;}
 }
 .btn-io:hover{border-color:var(--brass-bright);color:var(--brass-bright);}
 
+.allocation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:28px;}
+.allocation-card{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:16px;}
+.allocation-card h4{margin:0 0 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:500;}
+.allocation-card .chart-holder{position:relative;height:200px;margin-bottom:12px;}
+.allocation-legend{display:flex;flex-direction:column;gap:6px;font-size:0.78rem;}
+.allocation-legend .row{display:flex;align-items:center;gap:8px;}
+.allocation-legend .swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+.allocation-legend .label{flex:1;color:var(--ink-dim);}
+.allocation-legend .pct{font-family:'IBM Plex Mono',monospace;color:var(--ink-faint);}
+
 .chart-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px;}
 .chart-controls .field{min-width:160px;}
 .chip-row{display:flex;gap:8px;flex-wrap:wrap;}

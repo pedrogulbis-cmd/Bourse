@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=5.7.0"></script>
+<script src="theme.js?v=5.8.0"></script>
 <title>Le Grand Livre — Portefeuille</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,8 +43,12 @@
     <input type="file" id="importFile" accept="application/json" style="display:none">
   </div>
 
+  <!-- ALLOCATION -->
+  <div class="section-title"><span class="idx">02</span> Répartition du portefeuille</div>
+  <div id="allocationWrap" class="allocation-grid"></div>
+
   <!-- CHART -->
-  <div class="section-title"><span class="idx">02</span> Performance dans le temps</div>
+  <div class="section-title"><span class="idx">03</span> Performance dans le temps</div>
   <div class="chart-controls">
     <div class="field">
       <label>Comparer à (aucun, un ou plusieurs)</label>
@@ -72,7 +76,7 @@
   </div>
 
   <!-- HOLDINGS -->
-  <div class="section-title"><span class="idx">03</span> Mes positions</div>
+  <div class="section-title"><span class="idx">04</span> Mes positions</div>
   <div id="holdingsWrap"></div>
 
   <footer>
@@ -82,9 +86,9 @@
 
 </div>
 
-<script src="data.js?v=5.7.0"></script>
-<script src="portfolio-store.js?v=5.7.0"></script>
+<script src="data.js?v=5.8.0"></script>
+<script src="portfolio-store.js?v=5.8.0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
-<script src="portfolio.js?v=5.7.0"></script>
+<script src="portfolio.js?v=5.8.0"></script>
 </body>
 </html>

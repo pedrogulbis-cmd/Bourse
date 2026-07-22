@@ -143,9 +143,17 @@ async function renderPortfolio(){
   const totalValue = rows.reduce((s,r)=>s + (r.currentValue!=null ? r.currentValue : r.costBasis), 0);
   const totalGain = totalValue - totalCost;
   const totalGainPct = totalCost>0 ? (totalGain/totalCost*100) : null;
+  // Dividende attendu = valeur actuelle de la position × rendement du dividende
+  // du titre (hors rachats d'actions, qui ne sont pas un revenu perçu).
+  const dividendIncome = rows.reduce((s,r)=>{
+    const val = r.currentValue!=null ? r.currentValue : r.costBasis;
+    const dy = r.live ? r.live.divYield : null;
+    return s + (dy!=null ? val*dy : 0);
+  }, 0);
 
-  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length);
+  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome);
   renderHoldingsTable(rows);
+  renderAllocation(rows);
 
   // Enregistre un point d'historique (un seul par jour, écrasé si on revisite le même jour)
   // — toujours en euros, cohérent avec les totaux affichés.
@@ -156,18 +164,20 @@ async function renderPortfolio(){
   await renderChart();
 }
 
-function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions){
+function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome){
   const el = document.getElementById("pfSummary");
   if(nPositions === 0){
     el.innerHTML = `<div class="card"><div class="lbl">Positions</div><div class="val">0</div></div>`;
     return;
   }
   const gainClass = totalGain>=0 ? "pos" : "neg";
+  const yieldOnCost = totalCost>0 ? (dividendIncome/totalCost*100) : null;
   el.innerHTML = `
     <div class="card"><div class="lbl">Positions</div><div class="val">${nPositions}</div></div>
     <div class="card"><div class="lbl">Investi</div><div class="val">${fmtEUR(totalCost)}</div></div>
     <div class="card"><div class="lbl">Valeur actuelle</div><div class="val">${fmtEUR(totalValue)}</div></div>
     <div class="card"><div class="lbl">Plus/moins-value</div><div class="val ${gainClass}">${fmtEUR(totalGain)} (${fmtPctSigned(totalGainPct)})</div></div>
+    <div class="card"><div class="lbl">Dividendes attendus (12M)</div><div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div></div>
   `;
 }
 
@@ -214,6 +224,68 @@ function renderHoldingsTable(rows){
       }
     });
   });
+}
+
+let allocationCharts = [];
+
+function renderAllocation(rows){
+  const wrap = document.getElementById("allocationWrap");
+  allocationCharts.forEach(c=>c.destroy());
+  allocationCharts = [];
+
+  if(rows.length === 0){
+    wrap.innerHTML = "";
+    return;
+  }
+  if(typeof Chart === "undefined"){
+    wrap.innerHTML = `<div class="allocation-card">La librairie de graphique n'a pas pu se charger — répartition indisponible pour l'instant.</div>`;
+    return;
+  }
+
+  const groupBy = (keyFn, labelFn) => {
+    const totals = {};
+    rows.forEach(r=>{
+      const val = r.currentValue!=null ? r.currentValue : r.costBasis;
+      const key = keyFn(r) || "Inconnu";
+      totals[key] = (totals[key]||0) + val;
+    });
+    const entries = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+    const grandTotal = entries.reduce((s,[,v])=>s+v,0);
+    return entries.map(([key,val])=>({ label: labelFn ? labelFn(key) : key, value: val, pct: grandTotal>0?val/grandTotal*100:0 }));
+  };
+
+  const bySector = groupBy(r => r.live ? r.live.sector : null);
+  const byCountry = groupBy(r => r.country, code => { const cm = countryMeta(code); return cm ? cm.name : code; });
+  const byCurrency = groupBy(r => r.currency);
+
+  wrap.innerHTML = `
+    <div class="allocation-card"><h4>Par secteur</h4><div class="chart-holder"><canvas id="allocSector"></canvas></div><div class="allocation-legend" id="legendSector"></div></div>
+    <div class="allocation-card"><h4>Par pays</h4><div class="chart-holder"><canvas id="allocCountry"></canvas></div><div class="allocation-legend" id="legendCountry"></div></div>
+    <div class="allocation-card"><h4>Par devise</h4><div class="chart-holder"><canvas id="allocCurrency"></canvas></div><div class="allocation-legend" id="legendCurrency"></div></div>
+  `;
+
+  const palette = ["#C9A24B","#5B8A7A","#8B7CB6","#C9704B","#4F8FBF","#D0A5B0","#8FA85E","#A98CC9","#6FB0A8","#C97D8F","#9FA0C9","#B8935E"];
+  const panelColor = getComputedStyle(document.documentElement).getPropertyValue('--panel').trim() || "#161F1A";
+
+  const drawDoughnut = (canvasId, legendId, data) => {
+    const ctx = document.getElementById(canvasId).getContext("2d");
+    const chart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: data.map(d=>d.label),
+        datasets: [{ data: data.map(d=>d.value), backgroundColor: data.map((_,i)=>palette[i%palette.length]), borderColor: panelColor, borderWidth: 2 }],
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } },
+    });
+    allocationCharts.push(chart);
+    document.getElementById(legendId).innerHTML = data.map((d,i)=>`
+      <div class="row"><span class="swatch" style="background:${palette[i%palette.length]}"></span><span class="label">${d.label}</span><span class="pct">${d.pct.toFixed(1)}%</span></div>
+    `).join('');
+  };
+
+  drawDoughnut("allocSector", "legendSector", bySector);
+  drawDoughnut("allocCountry", "legendCountry", byCountry);
+  drawDoughnut("allocCurrency", "legendCurrency", byCurrency);
 }
 
 function weightedMomentum(rows, field){
@@ -441,7 +513,7 @@ function toast(msg){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v5.7.0";
+  if(versionEl) versionEl.textContent = "v5.8.0";
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{

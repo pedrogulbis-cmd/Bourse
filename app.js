@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.2.0";
+const APP_VERSION = "v7.3.0";
 
 let state = {
   strategy: "trending_value",
@@ -262,7 +262,7 @@ function renderCountryList(){
 function renderNPicker(){
   const el = document.getElementById("nPicker");
   el.innerHTML = "";
-  [25,50,100].forEach(n=>{
+  [25,50,100,200,500].forEach(n=>{
     const btn = document.createElement("button");
     btn.textContent = n;
     if(n===state.resultCount) btn.classList.add("on");
@@ -330,6 +330,17 @@ function renderResults(){
   title.textContent = `${strat.name} — ${state.lastResults.length} entreprises`;
   const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
   meta.innerHTML = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
+
+  // Indicatif uniquement : combien de positions déjà détenues (portefeuille
+  // actif) ressortent dans ce classement, et à quel rang.
+  const heldSymbols = new Set(pfGetHoldings().map(h=>h.symbol));
+  const heldMatches = state.lastResults
+    .map((s,i)=>({name:s.name, symbol:s.symbol, rank:i+1}))
+    .filter(m=>heldSymbols.has(m.symbol));
+  if(heldMatches.length){
+    meta.innerHTML += ` · <span class="pf-match-note">📌 ${heldMatches.length} de ton portefeuille ici : ${heldMatches.map(m=>`${m.name} (#${m.rank})`).join(', ')}</span>`;
+  }
+
   exportBtn.style.display = "inline-block";
 
   let rows = [...state.lastResults];
@@ -355,9 +366,12 @@ function renderResults(){
     const warnBadge = warnings.length
       ? `<span class="warn-badge" title="${warnings.join(' · ').replace(/"/g,'&quot;')}">⚠</span>`
       : '';
-    html += `<tr data-symbol="${s.symbol}"${warnings.length ? ' class="has-warn"' : ''}>
+    const isHeld = heldSymbols.has(s.symbol);
+    const heldBadge = isHeld ? `<span class="held-badge" title="Déjà dans ton portefeuille">📌</span>` : '';
+    const rowClasses = [warnings.length ? 'has-warn' : '', isHeld ? 'has-held' : ''].filter(Boolean).join(' ');
+    html += `<tr data-symbol="${s.symbol}"${rowClasses ? ` class="${rowClasses}"` : ''}>
       <td class="rank">${rank}${warnBadge}</td>
-      <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
+      <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}${heldBadge}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
       <td class="num"><span class="score-pill">${s.vc2Score}</span></td>
       <td class="num ${s.mom6>=0?'pos':'neg'}">${fmtMom(s.mom6)}</td>
       <td class="num ${s.mom3>=0?'pos':'neg'}">${fmtMom(s.mom3)}</td>

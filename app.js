@@ -6,22 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.1.0";
-
-// Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
-// serveur qui ne répond jamais, etc.) — on force un délai maximum.
-async function fetchWithTimeout(url, options, timeoutMs = 15000){
-  const controller = new AbortController();
-  const timer = setTimeout(()=>controller.abort(), timeoutMs);
-  try{
-    return await fetch(url, {...(options||{}), signal: controller.signal});
-  }catch(e){
-    if(e.name === "AbortError") throw new Error("Délai dépassé (>" + Math.round(timeoutMs/1000) + "s), le serveur ne répond pas");
-    throw e;
-  }finally{
-    clearTimeout(timer);
-  }
-}
+const APP_VERSION = "v7.2.0";
 
 let state = {
   strategy: "trending_value",
@@ -87,24 +72,8 @@ function scorePool(records){
 // ---------------------------------------------------------------
 // Chargement et filtrage du snapshot local
 // ---------------------------------------------------------------
-let snapshotCache = null;
-async function loadSnapshot(){
-  if(snapshotCache) return snapshotCache;
-  // Cache-buster : sans ça, le navigateur (ou le CDN de GitHub Pages) peut
-  // continuer à servir une ancienne version du fichier après un ré-upload,
-  // puisque data-snapshot.json garde toujours le même nom.
-  const url = "./data-snapshot.json?t=" + Date.now();
-  const res = await fetchWithTimeout(url, {cache:"no-store"}, 15000);
-  if(!res.ok){
-    throw new Error("data-snapshot.json introuvable (HTTP "+res.status+") — lance d'abord le scraper local (voir scraper/README.md) puis commit le fichier généré à la racine du site.");
-  }
-  const json = await res.json();
-  if(!json || !Array.isArray(json.records)){
-    throw new Error("data-snapshot.json a un format inattendu.");
-  }
-  snapshotCache = json;
-  return json;
-}
+// loadSnapshot() est désormais défini dans data.js (partagé entre les 3
+// pages) — gère la fusion des parties si le snapshot est découpé.
 
 async function runScreening(){
   const runBtn = document.getElementById("runBtn");

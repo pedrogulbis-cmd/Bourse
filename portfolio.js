@@ -23,24 +23,9 @@ const BENCHMARK_LABELS = {
   FR: "CAC 40 (France)", EU: "Indice européen", US: "S&P 500 (États-Unis)", WORLD: "Indice monde",
 };
 
-async function fetchWithTimeout(url, options, timeoutMs = 15000){
-  const controller = new AbortController();
-  const timer = setTimeout(()=>controller.abort(), timeoutMs);
-  try{
-    return await fetch(url, {...(options||{}), signal: controller.signal});
-  }finally{
-    clearTimeout(timer);
-  }
-}
-
-async function loadSnapshot(){
-  const url = "./data-snapshot.json?t=" + Date.now();
-  const res = await fetchWithTimeout(url, {cache:"no-store"}, 15000);
-  if(!res.ok) throw new Error("data-snapshot.json introuvable (HTTP "+res.status+")");
-  const json = await res.json();
-  if(!json || !Array.isArray(json.records)) throw new Error("Format de snapshot inattendu.");
-  return json;
-}
+// fetchWithTimeout() et loadSnapshot() sont désormais définis dans data.js
+// (partagé entre les 3 pages) — gère la fusion des parties si le snapshot
+// est découpé pour rester sous la limite de taille d'upload de GitHub.
 
 function fmtEUR(v){
   if(v===null||v===undefined||Number.isNaN(v)) return "—";
@@ -985,7 +970,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.1.0";
+  if(versionEl) versionEl.textContent = "v7.2.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

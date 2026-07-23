@@ -319,3 +319,78 @@ function missingFactorCount(s){
 
 // expose méthodologie triée dans l'ordre d'affichage souhaité
 const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders","higgons_v2"];
+
+// ===================================================================
+// Chargement du snapshot — partagé entre index.html, search.html et
+// portfolio.html (toutes chargent data.js avant leur propre script).
+//
+// Le fichier peut désormais être découpé en plusieurs parties par le
+// scraper (voir scraper/export.py) pour rester sous la limite d'upload
+// de GitHub (25 Mo) une fois l'univers élargi : data-snapshot-manifest.json
+// liste les parties, chacune un fichier data-snapshot-N.json. On charge
+// le manifeste puis toutes les parties en parallèle, et on fusionne —
+// transparent pour le reste du code, qui continue de voir un seul objet
+// {generatedAt, records: [...]}.
+//
+// Repli sur l'ancien format à fichier unique (data-snapshot.json) si
+// aucun manifeste n'est trouvé, pour une transition en douceur.
+// ===================================================================
+
+let snapshotCache = null;
+
+async function fetchWithTimeout(url, options, timeoutMs = 15000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeoutMs);
+  try{
+    return await fetch(url, {...(options||{}), signal: controller.signal});
+  }catch(e){
+    if(e.name === "AbortError") throw new Error("Délai dépassé (>" + Math.round(timeoutMs/1000) + "s), le serveur ne répond pas");
+    throw e;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function loadSnapshot(){
+  if(snapshotCache) return snapshotCache;
+
+  const manifestUrl = "./data-snapshot-manifest.json?t=" + Date.now();
+  let manifestRes = null;
+  try{
+    manifestRes = await fetchWithTimeout(manifestUrl, {cache:"no-store"}, 15000);
+  }catch(e){
+    manifestRes = null; // pas de manifeste accessible -> on tentera l'ancien format plus bas
+  }
+
+  if(manifestRes && manifestRes.ok){
+    const manifest = await manifestRes.json();
+    if(!manifest || !Array.isArray(manifest.parts) || manifest.parts.length === 0){
+      throw new Error("Manifeste de snapshot invalide (data-snapshot-manifest.json sans partie listée).");
+    }
+    const partsData = await Promise.all(manifest.parts.map(async (partFile)=>{
+      const partUrl = `./${partFile}?t=${Date.now()}`;
+      const res = await fetchWithTimeout(partUrl, {cache:"no-store"}, 25000);
+      if(!res.ok) throw new Error(`Partie de snapshot introuvable : ${partFile} (HTTP ${res.status})`);
+      const data = await res.json();
+      if(!data || !Array.isArray(data.records)) throw new Error(`Format inattendu dans ${partFile}`);
+      return data.records;
+    }));
+    const merged = {
+      generatedAt: manifest.generatedAt,
+      records: partsData.flat(),
+    };
+    snapshotCache = merged;
+    return merged;
+  }
+
+  // Repli : ancien format à fichier unique (avant le découpage en parties)
+  const legacyUrl = "./data-snapshot.json?t=" + Date.now();
+  const res = await fetchWithTimeout(legacyUrl, {cache:"no-store"}, 15000);
+  if(!res.ok){
+    throw new Error("Aucun snapshot trouvé (ni data-snapshot-manifest.json, ni data-snapshot.json) — lance d'abord le scraper local (voir scraper/README.md) puis commit les fichiers générés à la racine du site.");
+  }
+  const json = await res.json();
+  if(!json || !Array.isArray(json.records)) throw new Error("Format de snapshot inattendu.");
+  snapshotCache = json;
+  return json;
+}

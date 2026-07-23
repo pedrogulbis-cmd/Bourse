@@ -43,7 +43,16 @@ def main():
 
     with open(args.input, "r", encoding="utf-8") as f:
         data = json.load(f)
-    holdings = data.get("holdings", [])
+
+    # Le format d'export a changé avec l'arrivée des portefeuilles multiples :
+    # les positions sont maintenant nichées dans data["portfolios"][i]["holdings"]
+    # plutôt qu'à la racine. On gère les deux formats pour rester compatible
+    # avec d'anciens exports.
+    if isinstance(data.get("portfolios"), list):
+        holdings = [h for p in data["portfolios"] for h in p.get("holdings", [])]
+    else:
+        holdings = data.get("holdings", [])
+
     if not holdings:
         print("Aucune position trouvée dans le fichier exporté.")
         return

@@ -29,7 +29,6 @@ def export_snapshot(conn, out_path=SNAPSHOT_PATH):
             "isin": r.get("isin"),
             "country": r["country"],
             "homeCountry": r.get("home_country"),
-            "assetType": r.get("asset_type") or "stock",
             "homeCountryCode": NAME_TO_COUNTRY_CODE.get(r.get("home_country")) if r.get("home_country") else None,
             "listedCurrency": r.get("listed_currency"),
             "sector": r["sector"] or "—",

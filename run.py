@@ -41,8 +41,6 @@ def main():
                      help="Ne fait aucun appel réseau : régénère juste data-snapshot.json à partir de ce qui est déjà dans la base.")
     ap.add_argument("--dedupe-only", action="store_true",
                      help="Supprime les doublons de cotations dans la base existante, puis réexporte le snapshot — sans rien refetcher.")
-    ap.add_argument("--no-etfs", action="store_true",
-                     help="Ne récupère PAS les ETF (récupérés par défaut, marqués asset_type='etf', exclus du calcul des stratégies côté site mais consultables en recherche/portefeuille).")
     ap.add_argument("--db", type=str, default=DB_PATH)
     args = ap.parse_args()
 
@@ -78,22 +76,15 @@ def main():
                 for c in euronext_targets:
                     dbmod.clear_universe_for_country(conn, c)
                 buckets = universe.fetch_euronext_bucket(args.mcap_floor, debug=args.debug, countries=euronext_targets)
-                etf_buckets = {}
-                if not args.no_etfs:
-                    try:
-                        etf_buckets = universe.fetch_euronext_bucket(args.mcap_floor, debug=args.debug, countries=euronext_targets, is_etf=True)
-                    except Exception as e:
-                        print(f"  ⚠ échec ETF groupe Euronext : {e}")
                 for c in euronext_targets:
-                    records = buckets.get(c, []) + etf_buckets.get(c, [])
+                    records = buckets.get(c, [])
                     if args.limit:
                         records = records[: args.limit]
                     for r in records:
-                        dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"), r.get("asset_type", "stock"))
+                        dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"))
                         dbmod.upsert_fundamentals(conn, r["symbol"], r, error=None)
                     total_ok += len(records)
-                    n_etf = sum(1 for r in records if r.get("asset_type") == "etf")
-                    print(f"  {c} : {len(records)} titres (groupe Euronext, classés par domicile réel)" + (f" (dont {n_etf} ETF)" if n_etf else ""))
+                    print(f"  {c} : {len(records)} titres (groupe Euronext, classés par domicile réel)")
                 conn.commit()
             except Exception as e:
                 print(f"  ⚠ échec groupe Euronext ({', '.join(euronext_targets)}) : {e}")
@@ -102,20 +93,14 @@ def main():
             try:
                 dbmod.clear_universe_for_country(conn, c)
                 records = universe.fetch_country_stocks(c, args.mcap_floor, debug=args.debug)
-                if not args.no_etfs:
-                    try:
-                        records += universe.fetch_country_etfs(c, args.mcap_floor, debug=args.debug)
-                    except Exception as e:
-                        print(f"  ⚠ échec ETF pour {c} : {e}")
                 if args.limit:
                     records = records[: args.limit]
                 for r in records:
-                    dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"), r.get("asset_type", "stock"))
+                    dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"))
                     dbmod.upsert_fundamentals(conn, r["symbol"], r, error=None)
                 conn.commit()
                 total_ok += len(records)
-                n_etf = sum(1 for r in records if r.get("asset_type") == "etf")
-                print(f"  {c} : {len(records)} titres" + (f" (dont {n_etf} ETF)" if n_etf else ""))
+                print(f"  {c} : {len(records)} titres")
             except Exception as e:
                 print(f"  ⚠ échec pour {c} : {e}")
 

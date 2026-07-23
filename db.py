@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS universe (
     home_country TEXT,
     sector TEXT,
     mcap REAL,
-    asset_type TEXT,
     fetched_at REAL
 );
 
@@ -59,8 +58,6 @@ def _migrate(conn):
         conn.execute("ALTER TABLE universe ADD COLUMN isin TEXT")
     if "home_country" not in cols:
         conn.execute("ALTER TABLE universe ADD COLUMN home_country TEXT")
-    if "asset_type" not in cols:
-        conn.execute("ALTER TABLE universe ADD COLUMN asset_type TEXT DEFAULT 'stock'")
     fcols = {row["name"] for row in conn.execute("PRAGMA table_info(fundamentals)").fetchall()}
     for col in ("roe", "op_margin", "revenue_growth", "avg_daily_value"):
         if col not in fcols:
@@ -94,15 +91,15 @@ def clear_universe_for_country(conn, country_code):
     conn.execute("DELETE FROM universe WHERE country = ?", (country_code,))
 
 
-def upsert_universe(conn, symbol, name, country, sector, mcap=None, isin=None, home_country=None, asset_type="stock"):
+def upsert_universe(conn, symbol, name, country, sector, mcap=None, isin=None, home_country=None):
     conn.execute(
-        """INSERT INTO universe (symbol, name, country, sector, mcap, isin, home_country, asset_type, fetched_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """INSERT INTO universe (symbol, name, country, sector, mcap, isin, home_country, fetched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(symbol) DO UPDATE SET
              name=excluded.name, country=excluded.country,
              sector=excluded.sector, mcap=excluded.mcap, isin=excluded.isin,
-             home_country=excluded.home_country, asset_type=excluded.asset_type, fetched_at=excluded.fetched_at""",
-        (symbol, name, country, sector, mcap, isin, home_country, asset_type, time.time()),
+             home_country=excluded.home_country, fetched_at=excluded.fetched_at""",
+        (symbol, name, country, sector, mcap, isin, home_country, time.time()),
     )
 
 
@@ -265,7 +262,7 @@ def get_stale_symbols(conn, symbols, max_age_days):
 
 def get_all_fundamentals(conn):
     rows = conn.execute(
-        """SELECT u.symbol, u.name, u.isin, u.country, u.home_country, u.asset_type, u.sector,
+        """SELECT u.symbol, u.name, u.isin, u.country, u.home_country, u.sector,
                   f.price, f.mcap, f.pb, f.pe, f.ps, f.pcf, f.ebitda_yield,
                   f.div_yield, f.buyback_yield, f.mom3, f.mom6, f.eps_growth,
                   f.roe, f.op_margin, f.revenue_growth, f.avg_daily_value,

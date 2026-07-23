@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v6.3.0";
+const APP_VERSION = "v6.4.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -509,7 +509,7 @@ function init(){
 // ---------------------------------------------------------------
 function openAddToPortfolioModal(record){
   const today = new Date().toISOString().slice(0,10);
-  const nativeCcy = currencyForCountry(record.country);
+  const nativeCcy = resolveListedCurrency(record);
   const hasChoice = nativeCcy !== "EUR";
   const portfolios = pfGetPortfolios();
   const activeId = pfGetActivePortfolioId();
@@ -544,7 +544,7 @@ function openAddToPortfolioModal(record){
             <option value="EUR">EUR</option>
           </select>` : `<span style="align-self:center;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;font-size:0.85rem;padding:0 6px;">EUR</span>`}
         </div>
-        ${hasChoice ? `<div style="font-size:0.7rem;color:var(--ink-faint);margin-top:5px;">Choisis "EUR" si ton courtier a converti et prélevé directement en euros.</div>` : ''}
+        ${hasChoice ? `<div style="font-size:0.7rem;color:var(--ink-faint);margin-top:5px;">Choisis "EUR" si ton courtier a converti et prélevé directement en euros.${nativeCcy==='GBX'?' ⚠ GBX = pence sterling (1 £ = 100 GBX) — vérifie bien avant de saisir le prix.':''}</div>` : ''}
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" id="pfCancel">Annuler</button>

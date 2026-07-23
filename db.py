@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     avg_daily_value REAL,
     analyst_rating REAL,
     analyst_label TEXT,
+    listed_currency TEXT,
     fetched_at REAL,
     error TEXT
 );
@@ -65,6 +66,8 @@ def _migrate(conn):
         conn.execute("ALTER TABLE fundamentals ADD COLUMN analyst_rating REAL")
     if "analyst_label" not in fcols:
         conn.execute("ALTER TABLE fundamentals ADD COLUMN analyst_label TEXT")
+    if "listed_currency" not in fcols:
+        conn.execute("ALTER TABLE fundamentals ADD COLUMN listed_currency TEXT")
 
 
 @contextmanager
@@ -204,8 +207,8 @@ def upsert_fundamentals(conn, symbol, data, error=None):
         """INSERT INTO fundamentals
            (symbol, price, mcap, pb, pe, ps, pcf, ebitda_yield, div_yield,
             buyback_yield, mom3, mom6, eps_growth, roe, op_margin, revenue_growth,
-            avg_daily_value, analyst_rating, analyst_label, fetched_at, error)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            avg_daily_value, analyst_rating, analyst_label, listed_currency, fetched_at, error)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(symbol) DO UPDATE SET
              price=excluded.price, mcap=excluded.mcap, pb=excluded.pb,
              pe=excluded.pe, ps=excluded.ps, pcf=excluded.pcf,
@@ -215,6 +218,7 @@ def upsert_fundamentals(conn, symbol, data, error=None):
              roe=excluded.roe, op_margin=excluded.op_margin, revenue_growth=excluded.revenue_growth,
              avg_daily_value=excluded.avg_daily_value,
              analyst_rating=excluded.analyst_rating, analyst_label=excluded.analyst_label,
+             listed_currency=excluded.listed_currency,
              fetched_at=excluded.fetched_at, error=excluded.error""",
         (
             symbol,
@@ -224,6 +228,7 @@ def upsert_fundamentals(conn, symbol, data, error=None):
             data.get("mom6"), data.get("eps_growth"),
             data.get("roe"), data.get("op_margin"), data.get("revenue_growth"),
             data.get("avg_daily_value"), data.get("analyst_rating"), data.get("analyst_label"),
+            data.get("listed_currency"),
             time.time(), error,
         ),
     )
@@ -261,7 +266,7 @@ def get_all_fundamentals(conn):
                   f.price, f.mcap, f.pb, f.pe, f.ps, f.pcf, f.ebitda_yield,
                   f.div_yield, f.buyback_yield, f.mom3, f.mom6, f.eps_growth,
                   f.roe, f.op_margin, f.revenue_growth, f.avg_daily_value,
-                  f.analyst_rating, f.analyst_label,
+                  f.analyst_rating, f.analyst_label, f.listed_currency,
                   f.fetched_at, f.error
            FROM universe u
            LEFT JOIN fundamentals f ON f.symbol = u.symbol"""

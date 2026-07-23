@@ -104,6 +104,13 @@ async function loadFxRates(){
 function toEUR(amount, currency, fxRates){
   if(amount == null) return null;
   if(!currency || currency === "EUR") return amount;
+  // GBX (pence sterling) n'a pas son propre taux fetché — dérivé du taux
+  // GBP (1 GBP = 100 GBX), pour éviter d'avoir à interroger une devise de
+  // plus côté scraper.
+  if(currency === "GBX"){
+    if(!fxRates || fxRates["GBP"] == null) return amount / 100; // repli grossier si même le taux GBP manque
+    return (amount / 100) * fxRates["GBP"];
+  }
   if(!fxRates || fxRates[currency] == null) return amount;
   return amount * fxRates[currency];
 }
@@ -128,8 +135,10 @@ async function renderPortfolio(){
   const rows = holdings.map(h=>{
     const live = bySymbol[h.symbol];
     const currentPrice = live ? live.price : null;
-    const currency = currencyForCountry(h.country);
-    if(currency !== "EUR" && (!fxRates || fxRates[currency] == null)) missingFx.add(currency);
+    // Devise réelle du prix ACTUEL : priorité au champ listedCurrency du
+    // snapshot (gère GBX correctement), repli sur la déduction par pays si absent.
+    const currency = resolveListedCurrency(live || h);
+    if(currency !== "EUR" && (!fxRates || (currency !== "GBX" && fxRates[currency] == null) || (currency === "GBX" && fxRates["GBP"] == null))) missingFx.add(currency);
 
     // Le prix d'achat a pu être saisi soit dans la devise native du titre,
     // soit directement en euros (courtier qui convertit à l'achat) — voir
@@ -375,6 +384,13 @@ async function renderChart(){
   const idxHist = benchmarkKeys.length ? await loadIndexHistory() : null;
   const holdingsPrices = holdings.length ? await loadHoldingsHistory() : null;
   const fxRates = holdings.length ? await loadFxRates() : null;
+  let liveBySymbol = {};
+  if(holdings.length){
+    try{
+      const snap = await loadSnapshot();
+      snap.records.forEach(r=>liveBySymbol[r.symbol]=r);
+    }catch(e){ /* tant pis, on retombera sur la devise déduite du pays */ }
+  }
 
   if(!startInput.value){
     if(history.length) startInput.value = history[0].date;
@@ -416,13 +432,15 @@ async function renderChart(){
           const s = seriesBySymbol[h.symbol];
           const pt = s ? findClosest(s, date) : null;
           let priceEUR;
+          const ccy = resolveListedCurrency(liveBySymbol[h.symbol] || h);
           if(pt){
-            // prix historique réel (holdings-history.json) — toujours dans la devise native du titre
-            priceEUR = toEUR(pt.close, currencyForCountry(h.country), fxRates);
+            // prix historique réel (holdings-history.json) — même instrument
+            // que le prix actuel, donc même devise de cotation.
+            priceEUR = toEUR(pt.close, ccy, fxRates);
           } else {
             // repli sur le prix d'achat — respecte la devise choisie à l'ajout
-            const purchaseCcy = h.priceCurrency || currencyForCountry(h.country);
-            priceEUR = purchaseCcy === "EUR" ? h.purchasePrice : toEUR(h.purchasePrice, currencyForCountry(h.country), fxRates);
+            const purchaseCcy = h.priceCurrency || ccy;
+            priceEUR = purchaseCcy === "EUR" ? h.purchasePrice : toEUR(h.purchasePrice, ccy, fxRates);
           }
           total += h.quantity * priceEUR;
         }
@@ -642,7 +660,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.2.0";
+  if(versionEl) versionEl.textContent = "v6.4.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

@@ -53,6 +53,21 @@ const COUNTRY_CURRENCY = {
 };
 function currencyForCountry(code){ return COUNTRY_CURRENCY[code] || "EUR"; }
 
+/**
+ * Résout la VRAIE devise d'un prix, à partir du champ listedCurrency du
+ * snapshot (prioritaire, vient directement de TradingView) plutôt que de la
+ * déduire uniquement du pays. Nécessaire notamment pour les actions
+ * britanniques cotées en pence (GBX) plutôt qu'en livres (GBP) — sans ça,
+ * un prix en pence traité comme des livres fausse la valorisation d'un
+ * facteur ~100. GBX est traité comme une devise à part entière (voir
+ * toEUR() dans portfolio.js pour la dérivation de son taux).
+ */
+function resolveListedCurrency(record){
+  const raw = record && record.listedCurrency;
+  if(raw) return raw.toUpperCase();
+  return currencyForCountry(record ? record.country : null);
+}
+
 // Génère à la fois l'emoji drapeau (utilisé en mobile) et une vraie image de
 // drapeau via flagcdn.com (utilisée en desktop, où les polices d'emoji du
 // système n'affichent pas toujours les drapeaux correctement — notamment

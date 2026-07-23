@@ -20,6 +20,17 @@ from config import TV_MARKETS, TV_COUNTRY_NAMES, MAX_UNIVERSE_PER_COUNTRY
 # RÉEL plutôt que par le marché où on l'a trouvée.
 EURONEXT_COUNTRIES = {"FR", "BE", "NL", "PT", "IE", "IT", "LU"}
 
+# Préfixes de tickers correspondant à des plateformes de cotation "miroir"
+# (MTF) qui dupliquent une cotation principale sans apporter d'information
+# nouvelle — juste moins liquides, avec un prix légèrement différent dû à
+# l'écart bid/ask. EUROTLX (plateforme italienne pour investisseurs
+# particuliers achetant des actions étrangères) en est l'exemple type :
+# TotalEnergies y apparaît sous "EUROTLX:4TTE" en plus de sa vraie cotation
+# "EURONEXT:TTE" — même ISIN, même pays, aucune valeur ajoutée à garder les
+# deux. Contrairement aux ADR (marché différent, souvent devise différente,
+# vraie alternative d'investissement), ce sont de purs doublons à écarter.
+EXCLUDED_EXCHANGE_PREFIXES = ("EUROTLX:",)
+
 # Nom TradingView du pays -> notre code pays, pour retrouver un code à partir
 # du champ `country` brut quand on veut afficher le domicile réel d'un titre.
 NAME_TO_COUNTRY_CODE = {v: k for k, v in TV_COUNTRY_NAMES.items()}
@@ -48,6 +59,7 @@ FIELDS = [
     "total_revenue_yoy_growth_fy",               # croissance du CA sur 12 mois — NOM NON CONFIRMÉ, à vérifier au premier run
     "average_volume_30d_calc",                  # volume moyen 30 jours — sert à calculer la liquidité (volume × prix)
     "recommendation_mark",                      # note des analystes (FactSet, -1 à 1) — NOM DE CHAMP NON CONFIRMÉ, à vérifier au premier run
+    "currency",                                 # devise RÉELLE de cotation du prix — NOM NON CONFIRMÉ, à vérifier au premier run. Essentiel pour les actions britanniques cotées en pence (GBX) plutôt qu'en livres (GBP) : sans ce champ, on suppose GBP pour tout titre GB, ce qui fausse la valorisation d'un facteur ~100 pour les titres en GBX.
 ]
 
 
@@ -120,6 +132,7 @@ def _row_to_record(row, country_code):
         "analyst_label": analyst_label,
         "home_country": row.get("country") or None,  # nom brut TradingView, ex. "Bermuda" — pour affichage uniquement
         "home_country_code": NAME_TO_COUNTRY_CODE.get(row.get("country")),  # None si pays hors de notre liste (ex. Bermudes)
+        "listed_currency": row.get("currency") or None,  # devise RÉELLE du prix affiché (ex. "GBX" pour du GB coté en pence) — prioritaire sur la devise déduite du pays côté site
     }
 
 
@@ -155,7 +168,8 @@ def fetch_country_stocks(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_
 
     out = []
     for _, row in df.iterrows():
-        if not row.get("ticker"):
+        ticker = row.get("ticker")
+        if not ticker or ticker.startswith(EXCLUDED_EXCHANGE_PREFIXES):
             continue
         # Plus aucune exclusion par pays ici (contrairement aux versions
         # précédentes, qui créaient un jeu d'équilibriste sans fin entre
@@ -201,7 +215,8 @@ def fetch_euronext_bucket(mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debu
     buckets = {c: [] for c in target_countries}
     unmatched = 0
     for _, row in df.iterrows():
-        if not row.get("ticker"):
+        ticker = row.get("ticker")
+        if not ticker or ticker.startswith(EXCLUDED_EXCHANGE_PREFIXES):
             continue
         actual_country_name = row.get("country")
         code = name_to_code.get(actual_country_name)

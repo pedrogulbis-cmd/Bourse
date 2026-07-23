@@ -41,6 +41,11 @@ function analystBadgeHTML(label){
   const cls = label.toLowerCase().replace(' ','-');
   return `<span class="analyst-badge ${cls}">${label}</span>`;
 }
+function homeCountryBadge(s){
+  if(!s.homeCountry) return '';
+  if(s.homeCountryCode && s.homeCountryCode === s.country) return '';
+  return `<span class="home-badge" title="Domicile réel : ${s.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
+}
 
 function matchesQuery(record, q){
   if(!q) return false;
@@ -89,7 +94,7 @@ function renderResults(matches, query){
       <td class="num">${fmtNum(s.pe)}</td>
       <td class="num ${s.mom6>=0?'pos':'neg'}">${fmtPct(s.mom6!=null?s.mom6/100:null)}</td>
       <td class="num">${analystBadgeHTML(s.analystLabel)}</td>
-      <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}</td>
+      <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>
       <td class="addcol">${renderAddBtn(s)}</td>
     </tr>`;
   });
@@ -194,7 +199,7 @@ function doSearch(){
 let debounceTimer = null;
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.0.0";
+  if(versionEl) versionEl.textContent = "v6.2.0";
 
   const statusEl = document.getElementById("searchStatus");
   statusEl.textContent = "Chargement de l'univers…";

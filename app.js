@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v6.0.0";
+const APP_VERSION = "v6.2.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -165,6 +165,12 @@ function renderAddBtn(s){
   const held = pfIsHeld(s.symbol);
   if(held) return `<button class="add-btn added" title="Déjà dans le portefeuille" disabled>✓</button>`;
   return `<button class="add-btn" data-add-symbol="${s.symbol}" title="Ajouter au portefeuille">+</button>`;
+}
+
+function homeCountryBadge(s){
+  if(!s.homeCountry) return '';
+  if(s.homeCountryCode && s.homeCountryCode === s.country) return ''; // même pays, rien à signaler
+  return `<span class="home-badge" title="Domicile réel : ${s.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
 }
 
 function fmtPct(v){ return (v===null||v===undefined) ? "—" : (v*100>=0?"+":"")+(v*100).toFixed(1)+"%"; }
@@ -358,7 +364,7 @@ function renderResults(){
       <td class="num ${s.shareholderYield>=0?'pos':'neg'}">${fmtPct(s.shareholderYield)}</td>
       <td class="num">${fmtMcap(s.mcap)}</td>
       <td class="num">${analystBadgeHTML(s.analystLabel)}</td>
-      <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}</td>
+      <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>
       <td class="addcol">${renderAddBtn(s)}</td>
     </tr>
     <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length+1}">
@@ -376,6 +382,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">Score composite</div><div class="v">${s.vc2Score} / 600</div></div>
         <div class="detail-item"><div class="k">Percentile composite</div><div class="v">${s.vc2Rank} / 100</div></div>
         <div class="detail-item"><div class="k">Note des analystes</div><div class="v">${analystBadgeHTML(s.analystLabel)}</div></div>
+        ${homeCountryBadge(s) ? `<div class="detail-item"><div class="k">Domicile réel</div><div class="v">${s.homeCountry} — cette cotation (${countryMeta(s.country)?countryMeta(s.country).name:s.country}) est une ADR/cross-listing, pas la cotation d'origine</div></div>` : ''}
         <div class="detail-item"><div class="k">ROE</div><div class="v">${s.roe!=null?fmtPct(s.roe):'—'}</div></div>
         <div class="detail-item"><div class="k">Marge d'exploitation</div><div class="v">${s.opMargin!=null?fmtPct(s.opMargin):'—'}</div></div>
         <div class="detail-item"><div class="k">Croissance CA (12M)</div><div class="v">${s.revenueGrowth!=null?fmtPct(s.revenueGrowth):'—'}</div></div>

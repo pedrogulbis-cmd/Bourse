@@ -20,6 +20,10 @@ from config import TV_MARKETS, TV_COUNTRY_NAMES, MAX_UNIVERSE_PER_COUNTRY
 # RÉEL plutôt que par le marché où on l'a trouvée.
 EURONEXT_COUNTRIES = {"FR", "BE", "NL", "PT", "IE", "IT", "LU"}
 
+# Nom TradingView du pays -> notre code pays, pour retrouver un code à partir
+# du champ `country` brut quand on veut afficher le domicile réel d'un titre.
+NAME_TO_COUNTRY_CODE = {v: k for k, v in TV_COUNTRY_NAMES.items()}
+
 # Champs demandés à TradingView, dans l'ordre où ils reviennent dans les
 # lignes de résultat (le premier "ticker"/"name" est toujours en tête,
 # ajouté automatiquement par la librairie).
@@ -114,6 +118,8 @@ def _row_to_record(row, country_code):
         "avg_daily_value": avg_daily_value,
         "analyst_rating": analyst_rating,
         "analyst_label": analyst_label,
+        "home_country": row.get("country") or None,  # nom brut TradingView, ex. "Bermuda" — pour affichage uniquement
+        "home_country_code": NAME_TO_COUNTRY_CODE.get(row.get("country")),  # None si pays hors de notre liste (ex. Bermudes)
     }
 
 
@@ -151,14 +157,12 @@ def fetch_country_stocks(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_
     for _, row in df.iterrows():
         if not row.get("ticker"):
             continue
-        # PAS de double vérification "pays réel == pays attendu" ici (contrairement
-        # à une version précédente) : beaucoup de sociétés cotées sur un marché
-        # donné sont légalement domiciliées ailleurs pour des raisons fiscales
-        # (transport maritime/offshore notamment : Global Ship Lease domiciliée à
-        # Londres mais cotée au NYSE, Euroseas en Grèce, etc.). is_primary (filtre
-        # natif de la librairie) suffit à écarter les cross-listings parasites —
-        # le marché interrogé fait foi pour "où ce titre est réellement accessible
-        # à l'achat", ce qui est ce qui compte pour l'app.
+        # Plus aucune exclusion par pays ici (contrairement aux versions
+        # précédentes, qui créaient un jeu d'équilibriste sans fin entre
+        # ADR de blue chips et holdings de transport maritime). On garde
+        # TOUT ce que renvoie TradingView pour ce marché (is_primary suffit
+        # à écarter le bruit) — le pays de domiciliation réel est capturé à
+        # part (home_country) pour affichage, sans influencer le classement.
         out.append(_row_to_record(row, country_code))
 
     return out

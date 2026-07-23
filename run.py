@@ -81,7 +81,7 @@ def main():
                     if args.limit:
                         records = records[: args.limit]
                     for r in records:
-                        dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"))
+                        dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"))
                         dbmod.upsert_fundamentals(conn, r["symbol"], r, error=None)
                     total_ok += len(records)
                     print(f"  {c} : {len(records)} titres (groupe Euronext, classés par domicile réel)")
@@ -96,7 +96,7 @@ def main():
                 if args.limit:
                     records = records[: args.limit]
                 for r in records:
-                    dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"))
+                    dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"))
                     dbmod.upsert_fundamentals(conn, r["symbol"], r, error=None)
                 conn.commit()
                 total_ok += len(records)
@@ -104,10 +104,11 @@ def main():
             except Exception as e:
                 print(f"  ⚠ échec pour {c} : {e}")
 
-        removed = dbmod.dedupe_universe_by_name(conn)
-        conn.commit()
-        if removed:
-            print(f"— Déduplication par nom d'entreprise : {removed} cotations doublons retirées (résiduel — is_primary devrait déjà avoir filtré l'essentiel)")
+        # Pas de déduplication automatique par nom ici : on garde volontairement
+        # toutes les cotations d'une même entreprise (ex. Euronext Paris ET ADR
+        # NYSE de TotalEnergies) plutôt que d'en supprimer une au hasard — le
+        # pays de domicile réel est affiché sur chaque titre pour s'y retrouver.
+        # Reste disponible manuellement si besoin : python run.py --dedupe-only
 
         print(f"— Terminé : {total_ok} titres récupérés au total")
 

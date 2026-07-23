@@ -7,7 +7,9 @@ import time
 from datetime import datetime, timezone
 
 import db as dbmod
-from config import SNAPSHOT_PATH
+from config import SNAPSHOT_PATH, TV_COUNTRY_NAMES
+
+NAME_TO_COUNTRY_CODE = {v: k for k, v in TV_COUNTRY_NAMES.items()}
 
 
 def export_snapshot(conn, out_path=SNAPSHOT_PATH):
@@ -26,6 +28,8 @@ def export_snapshot(conn, out_path=SNAPSHOT_PATH):
             "name": r["name"],
             "isin": r.get("isin"),
             "country": r["country"],
+            "homeCountry": r.get("home_country"),
+            "homeCountryCode": NAME_TO_COUNTRY_CODE.get(r.get("home_country")) if r.get("home_country") else None,
             "sector": r["sector"] or "—",
             "price": r.get("price"),
             "mcap": r.get("mcap") or 0,

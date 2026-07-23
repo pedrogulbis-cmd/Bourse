@@ -55,6 +55,11 @@ function analystBadgeHTML(label){
   const cls = label.toLowerCase().replace(' ','-');
   return `<span class="analyst-badge ${cls}">${label}</span>`;
 }
+function homeCountryBadge(live){
+  if(!live || !live.homeCountry) return '';
+  if(live.homeCountryCode && live.homeCountryCode === live.country) return '';
+  return `<span class="home-badge" title="Domicile réel : ${live.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
+}
 
 async function loadIndexHistory(){
   try{
@@ -203,7 +208,7 @@ function renderHoldingsTable(rows){
     const ccySuffix = r.currency && r.currency !== "EUR" ? ` ${r.currency}` : " €";
     const purchaseCcySuffix = r.purchaseCcy && r.purchaseCcy !== "EUR" ? ` ${r.purchaseCcy}` : " €";
     html += `<tr>
-      <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
+      <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}${r.live?homeCountryBadge(r.live):''}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
       <td class="num">${r.quantity}</td>
       <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
       <td>${r.purchaseDate}</td>
@@ -637,7 +642,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.1.0";
+  if(versionEl) versionEl.textContent = "v6.2.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

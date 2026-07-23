@@ -226,6 +226,7 @@ function renderHoldingsTable(rows){
       <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
       <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
       <td class="row-actions">
+        <button class="edit-btn" data-edit-id="${r.id}" title="Modifier cette position">✎</button>
         ${otherPortfolios.length ? `<button class="move-btn" data-move-id="${r.id}" title="Déplacer vers un autre portefeuille">⇄</button>` : ''}
         <button class="remove-btn" data-remove-id="${r.id}" title="Retirer du portefeuille">✕</button>
       </td>
@@ -249,10 +250,87 @@ function renderHoldingsTable(rows){
     });
   });
 
+  wrap.querySelectorAll("[data-edit-id]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      openEditHoldingModal(btn.dataset.editId);
+    });
+  });
+
   wrap.querySelectorAll("[data-move-id]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       openMoveHoldingModal(btn.dataset.moveId);
     });
+  });
+}
+
+async function openEditHoldingModal(holdingId){
+  const portfolioId = pfGetActivePortfolioId();
+  const holding = pfGetHoldings(portfolioId).find(h=>h.id===holdingId);
+  if(!holding) return;
+
+  let live = null;
+  try{
+    const snap = await loadSnapshot();
+    live = snap.records.find(r=>r.symbol===holding.symbol) || null;
+  }catch(e){ /* tant pis, repli sur la devise déduite du pays */ }
+
+  const nativeCcy = resolveListedCurrency(live || holding);
+  const hasChoice = nativeCcy !== "EUR";
+  const currentCcy = holding.priceCurrency || nativeCcy;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Modifier ${holding.name}</h3>
+      <div class="modal-sub">${holding.symbol}</div>
+      <div class="modal-field">
+        <label>Date d'achat</label>
+        <input type="date" id="editDate" value="${holding.purchaseDate}" max="${new Date().toISOString().slice(0,10)}">
+      </div>
+      <div class="modal-field">
+        <label>Nombre d'actions</label>
+        <input type="number" id="editQty" value="${holding.quantity}" min="0" step="any">
+      </div>
+      <div class="modal-field">
+        <label>Prix d'achat</label>
+        <div style="display:flex;gap:8px;">
+          <input type="number" id="editPrice" value="${holding.purchasePrice}" min="0" step="any" style="flex:1;">
+          ${hasChoice ? `
+          <select id="editPriceCcy" style="width:90px;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;">
+            <option value="${nativeCcy}" ${currentCcy===nativeCcy?'selected':''}>${nativeCcy}</option>
+            <option value="EUR" ${currentCcy==='EUR'?'selected':''}>EUR</option>
+          </select>` : `<span style="align-self:center;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;font-size:0.85rem;padding:0 6px;">EUR</span>`}
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="editCancel">Annuler</button>
+        <button class="btn-confirm" id="editConfirm">Enregistrer</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector("#editCancel").addEventListener("click", close);
+  overlay.querySelector("#editConfirm").addEventListener("click", ()=>{
+    const qty = parseFloat(overlay.querySelector("#editQty").value);
+    const price = parseFloat(overlay.querySelector("#editPrice").value);
+    const date = overlay.querySelector("#editDate").value;
+    const ccySel = overlay.querySelector("#editPriceCcy");
+    const priceCurrency = ccySel ? ccySel.value : "EUR";
+    if(!qty || qty<=0){ toast("Nombre d'actions invalide."); return; }
+    if(!price || price<=0){ toast("Prix d'achat invalide."); return; }
+    if(!date){ toast("Date invalide."); return; }
+    const result = pfUpdateHolding(holdingId, { quantity: qty, purchasePrice: price, purchaseDate: date, priceCurrency }, portfolioId);
+    if(result.ok){
+      toast("Position mise à jour.");
+      close();
+      renderPortfolio();
+    } else {
+      toast("Échec : " + result.message);
+    }
   });
 }
 
@@ -660,7 +738,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.4.0";
+  if(versionEl) versionEl.textContent = "v6.5.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

@@ -139,6 +139,21 @@ function pfRemoveHolding(id, portfolioId){
   return holdings;
 }
 
+/**
+ * Modifie une position existante (quantité, prix d'achat, date, devise du
+ * prix) sans la supprimer/recréer — utile en cas d'erreur de saisie.
+ * `updates` est un objet partiel : seuls les champs fournis sont modifiés.
+ * Retourne {ok, message}.
+ */
+function pfUpdateHolding(id, updates, portfolioId){
+  const holdings = pfGetHoldings(portfolioId);
+  const idx = holdings.findIndex(h=>h.id===id);
+  if(idx === -1) return {ok:false, message:"Position introuvable."};
+  holdings[idx] = { ...holdings[idx], ...updates };
+  pfSaveHoldings(holdings, portfolioId);
+  return {ok:true, message:"Position mise à jour.", holding: holdings[idx]};
+}
+
 /** Un titre est-il détenu dans CE portefeuille (actif par défaut) ? Ne
  * regarde pas les autres portefeuilles — un même titre peut légitimement
  * être détenu à la fois en PEA et en CTO. */

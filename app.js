@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.7.0";
+const APP_VERSION = "v7.8.0";
 
 let state = {
   strategy: "trending_value",
@@ -15,6 +15,7 @@ let state = {
   mcapFloor: 1000000000,
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
   diversificationPct: null, // optionnel — null = aucun plafond par pays
+  peaOnly: false, // filtre éligibilité PEA (domicile UE/EEE)
   sortCol: "rank",
   sortDir: "asc",
   lastResults: [],
@@ -94,6 +95,9 @@ async function runScreening(){
       // veut pas punir un titre juste parce que la donnée manque, seulement
       // écarter ceux dont on SAIT qu'ils sont peu liquides.
       records = records.filter(r => r.avgDailyValue == null || r.avgDailyValue >= state.liquidityFloor);
+    }
+    if(state.peaOnly){
+      records = records.filter(r => isPeaEligible(r));
     }
 
     if(records.length === 0){
@@ -560,6 +564,10 @@ function init(){
 
   document.getElementById("diversificationPct").addEventListener("change", (e)=>{
     state.diversificationPct = e.target.value ? parseInt(e.target.value,10) : null;
+  });
+
+  document.getElementById("peaOnly").addEventListener("change", (e)=>{
+    state.peaOnly = e.target.checked;
   });
 
   document.getElementById("runBtn").addEventListener("click", runScreening);

@@ -65,6 +65,26 @@ function currencyForCountry(code){ return COUNTRY_CURRENCY[code] || "EUR"; }
  * facteur ~100. GBX est traité comme une devise à part entière (voir
  * toEUR() dans portfolio.js pour la dérivation de son taux).
  */
+/**
+ * Pays éligibles au PEA (Plan d'Épargne en Actions) : Union européenne
+ * (27) + Espace économique européen ayant une convention fiscale avec la
+ * France (Norvège, Islande, Liechtenstein — seule la Norvège est dans
+ * notre liste de pays). Le Royaume-Uni n'est PLUS éligible depuis le
+ * Brexit (1er janvier 2021), la Suisse ne l'a jamais été.
+ *
+ * C'est le domicile RÉEL de la société qui compte, pas la bourse de
+ * cotation — d'où l'utilisation de homeCountryCode (déjà utilisé pour le
+ * badge 🌐) plutôt que le simple pays de cotation.
+ */
+const PEA_ELIGIBLE_COUNTRIES = new Set([
+  "FR","DE","NL","ES","IT","BE","SE","DK","FI","PT","AT","IE","LU","PL","NO",
+]);
+
+function isPeaEligible(record){
+  const domicile = record.homeCountryCode || record.country;
+  return PEA_ELIGIBLE_COUNTRIES.has(domicile);
+}
+
 function resolveListedCurrency(record){
   const raw = record && record.listedCurrency;
   if(raw) return raw.toUpperCase();

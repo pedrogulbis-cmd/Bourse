@@ -157,6 +157,13 @@ header.top{
 
 .field{margin-bottom:14px;}
 .field label{display:block;font-size:0.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:6px;}
+.pea-check{
+  display:flex!important;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--hairline-bright);
+  border-radius:4px;padding:10px 12px;font-size:0.82rem;text-transform:none!important;letter-spacing:normal!important;
+  color:var(--ink)!important;cursor:pointer;
+}
+.pea-check input{accent-color:var(--brass);cursor:pointer;}
+.pea-hint{color:var(--ink-faint);font-size:0.82em;}
 .field .hint{font-size:0.72rem;color:var(--ink-faint);margin-top:5px;}
 input[type=text],input[type=password],input[type=number],select{
   width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.9.0"></script>
+<script src="theme.js?v=7.10.0"></script>
 <title>Le Grand Livre — Screener Wall Street</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -97,6 +97,13 @@
             Éligible PEA uniquement <span class="pea-hint">(domicile UE/EEE — exclut Royaume-Uni et Suisse)</span>
           </label>
         </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <label class="pea-check">
+            <input type="checkbox" id="excludeCrossListed">
+            Exclure les cotations croisées 🌐 <span class="pea-hint">(garde uniquement les titres domiciliés dans le pays où ils sont cotés)</span>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -138,8 +145,8 @@
 
 </div>
 
-<script src="data.js?v=7.9.0"></script>
-<script src="portfolio-store.js?v=7.9.0"></script>
-<script src="app.js?v=7.9.0"></script>
+<script src="data.js?v=7.10.0"></script>
+<script src="portfolio-store.js?v=7.10.0"></script>
+<script src="app.js?v=7.10.0"></script>
 </body>
 </html>

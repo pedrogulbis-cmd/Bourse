@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.9.0";
+const APP_VERSION = "v7.10.0";
 
 let state = {
   strategy: "trending_value",
@@ -16,6 +16,7 @@ let state = {
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
   diversificationPct: null, // optionnel — null = aucun plafond par pays
   peaOnly: false, // filtre éligibilité PEA (domicile UE/EEE)
+  excludeCrossListed: false, // exclut les titres dont le domicile réel diffère du pays de cotation (badge 🌐)
   sortCol: "rank",
   sortDir: "asc",
   lastResults: [],
@@ -98,6 +99,13 @@ async function runScreening(){
     }
     if(state.peaOnly){
       records = records.filter(r => isPeaEligible(r));
+    }
+    if(state.excludeCrossListed){
+      // Exclut uniquement les cas où le domicile réel est CONNU et diffère
+      // du pays de cotation — un titre sans homeCountryCode connu (pays
+      // hors de notre liste, ex. Bermudes) n'est pas exclu par excès de
+      // prudence, faute de pouvoir vérifier.
+      records = records.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
     }
 
     if(records.length === 0){
@@ -568,6 +576,10 @@ function init(){
 
   document.getElementById("peaOnly").addEventListener("change", (e)=>{
     state.peaOnly = e.target.checked;
+  });
+
+  document.getElementById("excludeCrossListed").addEventListener("change", (e)=>{
+    state.excludeCrossListed = e.target.checked;
   });
 
   document.getElementById("runBtn").addEventListener("click", runScreening);

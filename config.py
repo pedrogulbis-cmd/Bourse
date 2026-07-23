@@ -67,6 +67,27 @@ TV_COUNTRY_NAMES = {
     "HK": "Hong Kong",
     "SG": "Singapore",
     "KR": "South Korea",
+    # Pays UE/EEE qu'on ne scrape PAS activement comme marché à part (pas
+    # dans TV_MARKETS), mais qu'on doit reconnaître par leur NOM pour
+    # classer correctement le domicile réel d'une société qui y est basée
+    # mais cotée ailleurs (ex. Motor Oil Hellas, grecque, cotée à Francfort
+    # via Lang & Schwarz) — sans ça, le domicile retombe à tort sur le pays
+    # de cotation, ce qui fausse notamment le filtre d'éligibilité PEA.
+    "GR": "Greece",
+    "HU": "Hungary",
+    "CZ": "Czech Republic",
+    "SK": "Slovakia",
+    "SI": "Slovenia",
+    "HR": "Croatia",
+    "RO": "Romania",
+    "BG": "Bulgaria",
+    "MT": "Malta",
+    "CY": "Cyprus",
+    "LT": "Lithuania",
+    "LV": "Latvia",
+    "EE": "Estonia",
+    "IS": "Iceland",
+    "LI": "Liechtenstein",
 }
 
 # Capitalisation minimum par défaut si non précisée en ligne de commande.

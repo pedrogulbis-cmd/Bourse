@@ -77,7 +77,14 @@ function currencyForCountry(code){ return COUNTRY_CURRENCY[code] || "EUR"; }
  * badge 🌐) plutôt que le simple pays de cotation.
  */
 const PEA_ELIGIBLE_COUNTRIES = new Set([
-  "FR","DE","NL","ES","IT","BE","SE","DK","FI","PT","AT","IE","LU","PL","NO",
+  // Union européenne (27) — ceux qu'on scrape activement comme marché...
+  "FR","DE","NL","ES","IT","BE","SE","DK","FI","PT","AT","IE","LU","PL",
+  // ...et ceux qu'on reconnaît seulement pour la classification de domicile
+  // (jamais scrapés comme marché à part, mais rencontrés via des sociétés
+  // domiciliées là mais cotées ailleurs — ex. Motor Oil Hellas, grecque).
+  "GR","HU","CZ","SK","SI","HR","RO","BG","MT","CY","LT","LV","EE",
+  // Espace économique européen avec convention fiscale France (hors UE)
+  "NO","IS","LI",
 ]);
 
 function isPeaEligible(record){

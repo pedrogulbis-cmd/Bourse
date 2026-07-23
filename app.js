@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.3.0";
+const APP_VERSION = "v7.5.0";
 
 let state = {
   strategy: "trending_value",
@@ -86,6 +86,7 @@ async function runScreening(){
 
     const snap = await loadSnapshot();
     let records = snap.records.filter(r => countries.includes(r.country));
+    const universeCount = records.length; // total réel pour ces pays, AVANT filtrage capitalisation/liquidité/doublons
     records = records.filter(r => !r.mcap || r.mcap >= state.mcapFloor);
     if(state.liquidityFloor){
       // Un titre sans donnée de liquidité n'est PAS exclu par défaut — on ne
@@ -114,7 +115,7 @@ async function runScreening(){
     state.lastRunMeta = {
       strategy: state.strategy,
       poolCount: records.length,
-      universeCount: records.length,
+      universeCount: universeCount,
       countries: countries,
       snapshotGeneratedAt: snap.generatedAt,
       ts: Date.now(),

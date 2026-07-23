@@ -37,7 +37,10 @@ const ZONES = [
   {id:"na", label:"Amérique du Nord", countries:["US","CA"]},
   {id:"eu", label:"Europe", countries:["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","LU","PL"]},
   {id:"apac", label:"Asie-Pacifique", countries:["JP","AU","HK","SG","KR"]},
-  {id:"world", label:"Monde (sélection large)", countries:["US","CA","GB","FR","DE","CH","NL","ES","IT","JP","AU","KR"]},
+  // Dérivée automatiquement de TOUS les pays de COUNTRIES, plutôt qu'une
+  // liste codée en dur — évite de l'oublier à jour à chaque nouveau pays
+  // ajouté (elle ne contenait plus que 12 pays sur les 22 disponibles).
+  {id:"world", label:"Monde (tous les pays disponibles)", countries: COUNTRIES.map(c=>c.code)},
 ];
 
 function countryMeta(code){ return COUNTRIES.find(c=>c.code===code); }

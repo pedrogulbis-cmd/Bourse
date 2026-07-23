@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.6.0";
+const APP_VERSION = "v7.7.0";
 
 let state = {
   strategy: "trending_value",
@@ -14,6 +14,7 @@ let state = {
   resultCount: 25,
   mcapFloor: 1000000000,
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
+  diversificationPct: null, // optionnel — null = aucun plafond par pays
   sortCol: "rank",
   sortDir: "asc",
   lastResults: [],
@@ -109,7 +110,13 @@ async function runScreening(){
 
     records = scorePool(records.map(r=>({...r}))); // copie défensive, scorePool mute les objets
     const strat = STRATEGIES[state.strategy];
-    const selected = strat.select(records, state.resultCount);
+    // Récupère TOUS les candidats triés dans l'ordre de priorité de la
+    // stratégie (pas juste les N premiers) — nécessaire pour pouvoir
+    // "repêcher" les suivants d'un pays si le plafond de diversification
+    // en écarte certains. Ne change RIEN au tri lui-même.
+    const fullSorted = strat.select(records, records.length);
+    const diversification = applyDiversification(fullSorted, state.resultCount, state.diversificationPct);
+    const selected = diversification.selected;
 
     state.lastResults = selected;
     state.lastRunMeta = {
@@ -118,6 +125,9 @@ async function runScreening(){
       universeCount: universeCount,
       countries: countries,
       snapshotGeneratedAt: snap.generatedAt,
+      diversificationPct: state.diversificationPct,
+      diversificationApplied: diversification.appliedPct,
+      diversificationRelaxed: diversification.relaxed,
       ts: Date.now(),
     };
     state.sortCol = "rank"; state.sortDir = "asc";
@@ -162,6 +172,54 @@ function homeCountryBadge(s){
  *    badge 🌐) — c'est la cotation principale, la plus fiable.
  * 2. À égalité, celle avec la plus grande liquidité (valeur échangée/jour).
  */
+/**
+ * Applique un plafond de représentation par pays sur une liste déjà
+ * triée dans l'ordre de priorité de la stratégie (meilleur en premier).
+ * NE change PAS le classement — parcourt juste la liste dans l'ordre et
+ * saute un titre si son pays a déjà atteint le plafond, jusqu'à remplir
+ * `n` places.
+ *
+ * Si le plafond demandé rend impossible de remplir `n` titres (pas assez
+ * de pays différents dans le pool), il est automatiquement relâché au
+ * minimum nécessaire — jamais de résultat tronqué à cause du plafond,
+ * seulement à cause d'un pool réellement trop petit.
+ *
+ * Retourne {selected, appliedPct, relaxed} — appliedPct est le plafond
+ * RÉELLEMENT utilisé (peut différer de maxPct si relâché), relaxed
+ * indique si un relâchement a eu lieu.
+ */
+function applyDiversification(sortedFullList, n, maxPct){
+  if(!maxPct) return { selected: sortedFullList.slice(0,n), appliedPct: null, relaxed: false };
+
+  const targetN = Math.min(n, sortedFullList.length);
+  const tryFill = (capValue) => {
+    const countByCountry = {};
+    const result = [];
+    for(const rec of sortedFullList){
+      const c = rec.country || "?";
+      const used = countByCountry[c] || 0;
+      if(used < capValue){
+        result.push(rec);
+        countByCountry[c] = used + 1;
+        if(result.length >= n) break;
+      }
+    }
+    return result;
+  };
+
+  let cap = Math.max(1, Math.round(n * maxPct / 100));
+  let result = tryFill(cap);
+  let relaxed = false;
+  while(result.length < targetN && cap < n){
+    cap++;
+    result = tryFill(cap);
+    relaxed = true;
+  }
+
+  const appliedPct = Math.round((cap / n) * 100);
+  return { selected: result, appliedPct: relaxed ? appliedPct : maxPct, relaxed };
+}
+
 function dedupeForScreening(pool){
   const groups = {};
   pool.forEach(r=>{
@@ -332,6 +390,14 @@ function renderResults(){
   const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
   meta.innerHTML = `${state.lastRunMeta.poolCount} titres passés dans le calcul (sur ${state.lastRunMeta.universeCount} au total pour ces pays, avant filtrage capitalisation/liquidité) · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
 
+  if(state.lastRunMeta.diversificationPct){
+    if(state.lastRunMeta.diversificationRelaxed){
+      meta.innerHTML += ` · <span class="diversification-note">⚠ Plafond de diversification demandé (${state.lastRunMeta.diversificationPct}%) impossible à tenir avec assez de pays différents — relâché automatiquement à ~${state.lastRunMeta.diversificationApplied}% pour remplir la liste.</span>`;
+    } else {
+      meta.innerHTML += ` · <span class="diversification-note">Diversification : max ${state.lastRunMeta.diversificationPct}% par pays appliqué.</span>`;
+    }
+  }
+
   // Indicatif uniquement : combien de positions déjà détenues (portefeuille
   // actif) ressortent dans ce classement, et à quel rang.
   const heldSymbols = new Set(pfGetHoldings().map(h=>h.symbol));
@@ -490,6 +556,10 @@ function init(){
 
   document.getElementById("liquidityFloor").addEventListener("change", (e)=>{
     state.liquidityFloor = e.target.value ? parseInt(e.target.value,10) : null;
+  });
+
+  document.getElementById("diversificationPct").addEventListener("change", (e)=>{
+    state.diversificationPct = e.target.value ? parseInt(e.target.value,10) : null;
   });
 
   document.getElementById("runBtn").addEventListener("click", runScreening);

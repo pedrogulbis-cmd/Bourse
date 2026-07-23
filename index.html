@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.6.0"></script>
+<script src="theme.js?v=7.7.0"></script>
 <title>Le Grand Livre — Screener Wall Street</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -79,6 +79,17 @@
             <option value="5000000">≥ 5 M$ / jour (très liquide)</option>
           </select>
         </div>
+        <div class="field">
+          <label>Diversification par pays — optionnel, ne change pas le classement, seulement la sélection finale</label>
+          <select id="diversificationPct">
+            <option value="" selected>Aucun plafond (défaut)</option>
+            <option value="5">Max 5% par pays</option>
+            <option value="10">Max 10% par pays</option>
+            <option value="15">Max 15% par pays</option>
+            <option value="20">Max 20% par pays</option>
+            <option value="25">Max 25% par pays</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -120,8 +131,8 @@
 
 </div>
 
-<script src="data.js?v=7.6.0"></script>
-<script src="portfolio-store.js?v=7.6.0"></script>
-<script src="app.js?v=7.6.0"></script>
+<script src="data.js?v=7.7.0"></script>
+<script src="portfolio-store.js?v=7.7.0"></script>
+<script src="app.js?v=7.7.0"></script>
 </body>
 </html>

@@ -275,6 +275,7 @@ tr.has-warn:hover{background:rgba(200,110,50,0.08);}
 tr.has-held{background:rgba(91,138,122,0.05);}
 tr.has-held:hover{background:rgba(91,138,122,0.10);}
 .pf-match-note{color:var(--verdigris-bright);}
+.diversification-note{color:var(--ink-faint);}
 
 /* ---------- methodology ---------- */
 .method-section{margin-top:44px;}

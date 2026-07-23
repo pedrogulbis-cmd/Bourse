@@ -362,6 +362,10 @@ td.addcol{text-align:center;width:36px;}
 .pf-summary .card .val{font-family:'IBM Plex Mono',monospace;font-size:1.3rem;font-weight:600;color:var(--ink);}
 .pf-summary .card .val.pos{color:var(--verdigris-bright);}
 .pf-summary .card .val.neg{color:var(--oxide-bright);}
+.pf-summary .card .sub-breakdown{
+  display:flex;gap:12px;margin-top:6px;font-family:'IBM Plex Mono',monospace;
+  font-size:0.7rem;color:var(--ink-faint);font-weight:400;
+}
 
 .io-row{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap;}
 .btn-io{

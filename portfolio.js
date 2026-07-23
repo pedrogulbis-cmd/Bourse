@@ -211,7 +211,11 @@ function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPosition
   el.innerHTML = `
     <div class="card"><div class="lbl">Positions</div><div class="val">${nPositions}</div></div>
     <div class="card"><div class="lbl">Investi</div><div class="val">${fmtEUR(totalCost)}</div></div>
-    <div class="card"><div class="lbl">Valeur totale</div><div class="val">${fmtEUR(grandTotal)}${totalCash?` <span style="font-size:0.5em;color:var(--ink-faint);">(dont ${fmtEUR(totalCash)} cash)</span>`:''}</div></div>
+    <div class="card">
+      <div class="lbl">Valeur totale</div>
+      <div class="val">${fmtEUR(grandTotal)}</div>
+      ${totalCash ? `<div class="sub-breakdown"><span>Actions ${fmtEUR(totalValue)}</span><span>Cash ${fmtEUR(totalCash)}</span></div>` : ''}
+    </div>
     <div class="card"><div class="lbl">Plus/moins-value</div><div class="val ${gainClass}">${fmtEUR(totalGain)} (${fmtPctSigned(totalGainPct)})</div></div>
     <div class="card"><div class="lbl">Dividendes attendus (12M)</div><div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div></div>
   `;
@@ -981,7 +985,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.7.0";
+  if(versionEl) versionEl.textContent = "v6.8.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

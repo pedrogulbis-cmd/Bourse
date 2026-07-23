@@ -6,7 +6,8 @@ tradingview-screener. Remplace l'ancienne architecture en deux temps
 fondamentaux) — beaucoup plus rapide et beaucoup plus propre : le filtre
 "is_primary" intégré à la librairie exclut nativement les cross-listings.
 """
-from tradingview_screener import Query, col
+from tradingview_screener import Query, col, And
+from tradingview_screener.column import Column
 
 from config import TV_MARKETS, TV_COUNTRY_NAMES, MAX_UNIVERSE_PER_COUNTRY
 
@@ -133,6 +134,7 @@ def _row_to_record(row, country_code):
         "home_country": row.get("country") or None,  # nom brut TradingView, ex. "Bermuda" — pour affichage uniquement
         "home_country_code": NAME_TO_COUNTRY_CODE.get(row.get("country")),  # None si pays hors de notre liste (ex. Bermudes)
         "listed_currency": row.get("currency") or None,  # devise RÉELLE du prix affiché (ex. "GBX" pour du GB coté en pence) — prioritaire sur la devise déduite du pays côté site
+        "asset_type": "stock",  # écrasé en "etf" par fetch_country_etfs()
     }
 
 
@@ -178,6 +180,54 @@ def fetch_country_stocks(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_
         # à écarter le bruit) — le pays de domiciliation réel est capturé à
         # part (home_country) pour affichage, sans influencer le classement.
         out.append(_row_to_record(row, country_code))
+
+    return out
+
+
+def fetch_country_etfs(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debug=False):
+    """Récupère les ETF (pas les actions) pour un marché donné — même
+    mécanisme que fetch_country_stocks, mais avec le filtre TradingView
+    INVERSÉ : la librairie exclut les ETF par défaut (voir sa docstring :
+    "stocks... and non-ETF funds"), donc on reconstruit explicitement le
+    filtre pour ne garder QUE type=fund + typespecs contient 'etf'.
+
+    Marqués asset_type='etf' dans le dict retourné, pour que le site les
+    garde consultables (recherche, portefeuille) mais les EXCLUE du calcul
+    des stratégies du screener — un ETF n'a pas de P/E, ROE etc. au sens
+    où une action en a, donc le noter avec ces critères n'a pas de sens.
+    La plupart des champs fondamentaux (P/E, P/B, ROE, marge...) reviendront
+    vides pour un ETF, c'est normal, pas un bug."""
+    market = TV_MARKETS.get(country_code)
+    if not market:
+        raise ValueError(f"Pas de marché TradingView configuré pour {country_code}")
+
+    query = (
+        Query()
+        .select(*FIELDS)
+        .set_markets(market)
+        .where2(And(
+            Column("type") == "fund",
+            Column("typespecs").has(["etf"]),
+            Column("market_cap_basic") >= mcap_floor,
+        ))
+        .limit(max_results)
+        .order_by("market_cap_basic", ascending=False)
+    )
+
+    total, df = query.get_scanner_data()
+
+    if debug:
+        print(f"  [TradingView] {country_code} (ETF) : {total} trouvés, colonnes -> {list(df.columns)}")
+        print(f"  [TradingView] échantillon :\n{df.head(3).to_string()}")
+
+    out = []
+    for _, row in df.iterrows():
+        ticker = row.get("ticker")
+        if not ticker or ticker.startswith(EXCLUDED_EXCHANGE_PREFIXES):
+            continue
+        rec = _row_to_record(row, country_code)
+        rec["asset_type"] = "etf"
+        out.append(rec)
 
     return out
 

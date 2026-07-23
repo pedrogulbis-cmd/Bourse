@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v6.8.0";
+const APP_VERSION = "v6.9.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -117,6 +117,11 @@ async function runScreening(){
 
     const snap = await loadSnapshot();
     let records = snap.records.filter(r => countries.includes(r.country));
+    // Les ETF sont présents dans le snapshot (recherche, portefeuille) mais
+    // n'ont pas de P/E, ROE etc. au sens où une action en a — les inclure
+    // dans le calcul des stratégies n'aurait pas de sens (elles ressortiraient
+    // avec des rangs neutres/faussés). Exclus ici uniquement, pas de la base.
+    records = records.filter(r => r.assetType !== "etf");
     records = records.filter(r => !r.mcap || r.mcap >= state.mcapFloor);
     if(state.liquidityFloor){
       // Un titre sans donnée de liquidité n'est PAS exclu par défaut — on ne

@@ -115,6 +115,15 @@ function toEUR(amount, currency, fxRates){
   return amount * fxRates[currency];
 }
 
+/** true si toEUR() pourra réellement convertir cette devise (taux
+ * disponible), false si elle retombera sur le montant brut non converti —
+ * sert à afficher un avertissement visible plutôt qu'un "€" trompeur. */
+function fxRateAvailable(currency, fxRates){
+  if(!currency || currency === "EUR") return true;
+  if(currency === "GBX") return !!(fxRates && fxRates["GBP"] != null);
+  return !!(fxRates && fxRates[currency] != null);
+}
+
 let chartInstance = null;
 
 async function renderPortfolio(){
@@ -151,7 +160,8 @@ async function renderPortfolio(){
     const currentValue = currentValueNative!=null ? toEUR(currentValueNative, currency, fxRates) : null;
     const gain = currentValue!=null ? currentValue - costBasis : null;
     const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
-    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct };
+    const fxOk = fxRateAvailable(currency, fxRates) && fxRateAvailable(purchaseCcy, fxRates);
+    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk };
   });
 
   if(missingFx.size){
@@ -300,13 +310,13 @@ function renderHoldingsTable(rows){
     const gainClass = r.gain==null ? "" : (r.gain>=0 ? "pos" : "neg");
     const ccySuffix = r.currency && r.currency !== "EUR" ? ` ${r.currency}` : " €";
     const purchaseCcySuffix = r.purchaseCcy && r.purchaseCcy !== "EUR" ? ` ${r.purchaseCcy}` : " €";
-    html += `<tr>
+    html += `<tr${!r.fxOk?' class="fx-warn"':''}>
       <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}${r.live?homeCountryBadge(r.live):''}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
       <td class="num">${r.quantity}</td>
       <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
       <td>${r.purchaseDate}</td>
       <td class="num">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:'—'}</td>
-      <td class="num">${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *'}</td>
+      <td class="num">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>
       <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
       <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
       <td class="row-actions">
@@ -971,7 +981,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.6.0";
+  if(versionEl) versionEl.textContent = "v6.7.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

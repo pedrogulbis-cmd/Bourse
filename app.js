@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v6.2.0";
+const APP_VERSION = "v6.3.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -131,6 +131,12 @@ async function runScreening(){
       return;
     }
 
+    const beforeDedupe = records.length;
+    records = dedupeForScreening(records);
+    if(records.length < beforeDedupe){
+      toast(`${beforeDedupe - records.length} cotations doublons (même entreprise, plusieurs bourses) fusionnées pour ce screening — la recherche, elle, continue de toutes les afficher.`);
+    }
+
     records = scorePool(records.map(r=>({...r}))); // copie défensive, scorePool mute les objets
     const strat = STRATEGIES[state.strategy];
     const selected = strat.select(records, state.resultCount);
@@ -171,6 +177,34 @@ function homeCountryBadge(s){
   if(!s.homeCountry) return '';
   if(s.homeCountryCode && s.homeCountryCode === s.country) return ''; // même pays, rien à signaler
   return `<span class="home-badge" title="Domicile réel : ${s.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
+}
+
+/**
+ * Regroupe les cotations multiples d'une même entreprise (même ISIN — ex.
+ * TotalEnergies coté à la fois à Paris, Francfort, Vienne, Londres...) en
+ * une seule, pour que les stratégies du screener ne soient pas polluées
+ * par des dizaines d'entrées quasi-identiques de la même société. Ne
+ * modifie PAS les données sources : la page Recherche continue d'afficher
+ * toutes les cotations telles quelles.
+ *
+ * Choix de la cotation "canonique" à garder, par ordre de préférence :
+ * 1. Celle dont le domicile réel correspond au pays de cotation (pas de
+ *    badge 🌐) — c'est la cotation principale, la plus fiable.
+ * 2. À égalité, celle avec la plus grande liquidité (valeur échangée/jour).
+ */
+function dedupeForScreening(pool){
+  const groups = {};
+  pool.forEach(r=>{
+    const key = r.isin || r.symbol; // repli sur le symbole si pas d'ISIN connu
+    (groups[key] = groups[key] || []).push(r);
+  });
+  return Object.values(groups).map(group=>{
+    if(group.length === 1) return group[0];
+    const authentic = group.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
+    const candidates = authentic.length ? authentic : group;
+    candidates.sort((a,b)=> (b.avgDailyValue||0) - (a.avgDailyValue||0));
+    return candidates[0];
+  });
 }
 
 function fmtPct(v){ return (v===null||v===undefined) ? "—" : (v*100>=0?"+":"")+(v*100).toFixed(1)+"%"; }

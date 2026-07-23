@@ -92,6 +92,21 @@ function isPeaEligible(record){
   return PEA_ELIGIBLE_COUNTRIES.has(domicile);
 }
 
+/**
+ * Un titre est-il une cotation croisée (domicile réel différent du pays
+ * de cotation) ? Utilisée à la fois pour le badge 🌐 ET pour le filtre
+ * "Exclure les cotations croisées" — DOIT rester la même logique aux deux
+ * endroits, sinon le badge et le filtre se contredisent (ex. un titre
+ * domicilié dans un pays qu'on ne suit pas du tout, comme le Nigéria ou
+ * les Îles Caïmans : le nom brut du pays suffit à savoir que c'est une
+ * cotation croisée, même sans code pays résolu).
+ */
+function isCrossListed(record){
+  if(!record.homeCountry) return false;
+  if(record.homeCountryCode && record.homeCountryCode === record.country) return false;
+  return true;
+}
+
 function resolveListedCurrency(record){
   const raw = record && record.listedCurrency;
   if(raw) return raw.toUpperCase();

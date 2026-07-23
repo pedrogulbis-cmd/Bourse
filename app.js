@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.10.0";
+const APP_VERSION = "v7.11.0";
 
 let state = {
   strategy: "trending_value",
@@ -101,11 +101,12 @@ async function runScreening(){
       records = records.filter(r => isPeaEligible(r));
     }
     if(state.excludeCrossListed){
-      // Exclut uniquement les cas où le domicile réel est CONNU et diffère
-      // du pays de cotation — un titre sans homeCountryCode connu (pays
-      // hors de notre liste, ex. Bermudes) n'est pas exclu par excès de
-      // prudence, faute de pouvoir vérifier.
-      records = records.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
+      // Utilise EXACTEMENT le même critère que le badge 🌐 affiché dans le
+      // tableau (isCrossListed, dans data.js) — sinon le filtre laisse
+      // passer des titres qui affichent pourtant le badge (cas des pays
+      // hors de notre liste, ex. Nigéria, Îles Caïmans : le nom brut du
+      // domicile suffit à savoir que c'est une cotation croisée).
+      records = records.filter(r => !isCrossListed(r));
     }
 
     if(records.length === 0){
@@ -166,8 +167,7 @@ function renderAddBtn(s){
 }
 
 function homeCountryBadge(s){
-  if(!s.homeCountry) return '';
-  if(s.homeCountryCode && s.homeCountryCode === s.country) return ''; // même pays, rien à signaler
+  if(!isCrossListed(s)) return '';
   return `<span class="home-badge" title="Domicile réel : ${s.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
 }
 

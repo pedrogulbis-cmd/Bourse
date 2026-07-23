@@ -27,8 +27,7 @@ function analystBadgeHTML(label){
   return `<span class="analyst-badge ${cls}">${label}</span>`;
 }
 function homeCountryBadge(s){
-  if(!s.homeCountry) return '';
-  if(s.homeCountryCode && s.homeCountryCode === s.country) return '';
+  if(!isCrossListed(s)) return '';
   return `<span class="home-badge" title="Domicile réel : ${s.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
 }
 
@@ -184,7 +183,7 @@ function doSearch(){
 let debounceTimer = null;
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.10.0";
+  if(versionEl) versionEl.textContent = "v7.11.0";
 
   const statusEl = document.getElementById("searchStatus");
   statusEl.textContent = "Chargement de l'univers…";

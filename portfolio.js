@@ -41,8 +41,7 @@ function analystBadgeHTML(label){
   return `<span class="analyst-badge ${cls}">${label}</span>`;
 }
 function homeCountryBadge(live){
-  if(!live || !live.homeCountry) return '';
-  if(live.homeCountryCode && live.homeCountryCode === live.country) return '';
+  if(!live || !isCrossListed(live)) return '';
   return `<span class="home-badge" title="Domicile réel : ${live.homeCountry} — coté ici sur un autre marché (ADR, cross-listing...)">🌐</span>`;
 }
 
@@ -970,7 +969,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.10.0";
+  if(versionEl) versionEl.textContent = "v7.11.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

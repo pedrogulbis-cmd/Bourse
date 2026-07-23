@@ -70,13 +70,17 @@ TV_COUNTRY_NAMES = {
 }
 
 # Capitalisation minimum par défaut si non précisée en ligne de commande.
-# 200 M$ = seuil "All Stocks" du livre (inflation ajustée, approximé ici).
-DEFAULT_MCAP_FLOOR = 200_000_000
+# 0 = aucun filtre, récupère tout ce que TradingView renvoie pour un marché
+# (aligné avec ce qu'on voit sur tradingview.com sans filtre de capitalisation).
+# Ajuster via --mcap-floor si besoin d'un univers plus restreint.
+DEFAULT_MCAP_FLOOR = 0
 
 # Garde-fou : nombre max de titres récupérés par pays (TradingView pagine
 # en interne dans get_scanner_data(), ce plafond évite un pays énorme comme
-# les USA de ramener des dizaines de milliers de microcaps).
-MAX_UNIVERSE_PER_COUNTRY = 8000
+# les USA de ramener des dizaines de milliers de microcaps). Relevé à 15000
+# pour couvrir l'univers complet réel (ex. ~8000 titres US, ~3900 Japon,
+# ~2600 Canada observés sans filtre sur tradingview.com) avec de la marge.
+MAX_UNIVERSE_PER_COUNTRY = 15000
 
 DB_PATH = "screener.db"
 SNAPSHOT_PATH = "data-snapshot.json"  # à ajuster si scraper/ est un sous-dossier du site (ex. "../data-snapshot.json")

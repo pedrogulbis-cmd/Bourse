@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v6.4.0";
+const APP_VERSION = "v6.8.0";
 
 // Aucun fetch() ne doit pouvoir bloquer indéfiniment (réseau instable,
 // serveur qui ne répond jamais, etc.) — on force un délai maximum.
@@ -491,6 +491,14 @@ function init(){
   renderZonesAndCountries();
   renderNPicker();
   renderMethodology();
+
+  document.getElementById("methodToggle").addEventListener("click", ()=>{
+    const list = document.getElementById("methodList");
+    const chevron = document.getElementById("methodChevron");
+    const isOpen = list.style.display !== "none";
+    list.style.display = isOpen ? "none" : "block";
+    chevron.classList.toggle("open", !isOpen);
+  });
 
   document.getElementById("mcapFloor").addEventListener("change", (e)=>{
     state.mcapFloor = parseInt(e.target.value,10);

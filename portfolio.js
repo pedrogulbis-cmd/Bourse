@@ -170,22 +170,29 @@ async function renderPortfolio(){
     return s + (dy!=null ? val*dy : 0);
   }, 0);
 
-  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome);
+  const cashList = pfGetCash();
+  const cashRows = cashList.map(c=>({ ...c, valueEUR: toEUR(c.amount, c.currency, fxRates) }));
+  const totalCash = cashRows.reduce((s,c)=>s+(c.valueEUR||0), 0);
+
+  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome, totalCash);
   renderHoldingsTable(rows);
+  renderCash(cashRows);
   renderAllocation(rows);
 
+
   // Enregistre un point d'historique (un seul par jour, écrasé si on revisite le même jour)
-  // — toujours en euros, cohérent avec les totaux affichés.
-  if(rows.length > 0){
-    pfLogHistoryPoint(totalValue, totalCost);
+  // — toujours en euros, cash inclus, cohérent avec les totaux affichés.
+  if(rows.length > 0 || cashRows.length > 0){
+    pfLogHistoryPoint(totalValue + totalCash, totalCost);
   }
 
   await renderChart();
 }
 
-function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome){
+function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome, totalCash){
   const el = document.getElementById("pfSummary");
-  if(nPositions === 0){
+  const grandTotal = totalValue + (totalCash||0);
+  if(nPositions === 0 && !totalCash){
     el.innerHTML = `<div class="card"><div class="lbl">Positions</div><div class="val">0</div></div>`;
     return;
   }
@@ -194,10 +201,87 @@ function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPosition
   el.innerHTML = `
     <div class="card"><div class="lbl">Positions</div><div class="val">${nPositions}</div></div>
     <div class="card"><div class="lbl">Investi</div><div class="val">${fmtEUR(totalCost)}</div></div>
-    <div class="card"><div class="lbl">Valeur actuelle</div><div class="val">${fmtEUR(totalValue)}</div></div>
+    <div class="card"><div class="lbl">Valeur totale</div><div class="val">${fmtEUR(grandTotal)}${totalCash?` <span style="font-size:0.5em;color:var(--ink-faint);">(dont ${fmtEUR(totalCash)} cash)</span>`:''}</div></div>
     <div class="card"><div class="lbl">Plus/moins-value</div><div class="val ${gainClass}">${fmtEUR(totalGain)} (${fmtPctSigned(totalGainPct)})</div></div>
     <div class="card"><div class="lbl">Dividendes attendus (12M)</div><div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div></div>
   `;
+}
+
+function renderCash(cashRows){
+  const wrap = document.getElementById("cashWrap");
+  if(!wrap) return;
+  let html = `<div class="cash-list">`;
+  cashRows.forEach(c=>{
+    html += `<div class="cash-row">
+      <span class="cash-label">${c.label}</span>
+      <span class="cash-amount">${c.amount.toLocaleString('fr-FR',{maximumFractionDigits:2})} ${c.currency}${c.currency!=='EUR'?` <span class="cash-eur">(${fmtEUR(c.valueEUR)})</span>`:''}</span>
+      <button class="edit-btn" data-cash-edit="${c.id}" title="Modifier">✎</button>
+      <button class="remove-btn" data-cash-remove="${c.id}" title="Retirer">✕</button>
+    </div>`;
+  });
+  html += `<button class="pf-add-btn" id="addCashBtn">+ Ajouter du cash</button>`;
+  html += `</div>`;
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll("[data-cash-remove]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      if(confirm("Retirer cette ligne de cash ?")){
+        pfRemoveCash(btn.dataset.cashRemove);
+        renderPortfolio();
+      }
+    });
+  });
+  wrap.querySelectorAll("[data-cash-edit]").forEach(btn=>{
+    btn.addEventListener("click", ()=> openCashModal(btn.dataset.cashEdit));
+  });
+  document.getElementById("addCashBtn").addEventListener("click", ()=> openCashModal(null));
+}
+
+function openCashModal(cashId){
+  const existing = cashId ? pfGetCash().find(c=>c.id===cashId) : null;
+  const currencies = ["EUR","USD","GBP","GBX","CHF","JPY","CAD","AUD","HKD","SGD","KRW","SEK","DKK","NOK","PLN"];
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>${existing ? "Modifier le cash" : "Ajouter du cash"}</h3>
+      <div class="modal-sub">Argent disponible, pas encore investi — compté dans la valeur totale.</div>
+      <div class="modal-field">
+        <label>Libellé (optionnel)</label>
+        <input type="text" id="cashLabel" value="${existing ? existing.label : ''}" placeholder="ex. Liquidités DEGIRO">
+      </div>
+      <div class="modal-field">
+        <label>Montant</label>
+        <div style="display:flex;gap:8px;">
+          <input type="number" id="cashAmount" value="${existing ? existing.amount : ''}" min="0" step="any" style="flex:1;">
+          <select id="cashCcy" style="width:90px;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;">
+            ${currencies.map(c=>`<option value="${c}" ${(existing?existing.currency:'EUR')===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="cashCancel">Annuler</button>
+        <button class="btn-confirm" id="cashConfirm">${existing ? "Enregistrer" : "Ajouter"}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector("#cashCancel").addEventListener("click", close);
+  overlay.querySelector("#cashConfirm").addEventListener("click", ()=>{
+    const amount = parseFloat(overlay.querySelector("#cashAmount").value);
+    const currency = overlay.querySelector("#cashCcy").value;
+    const label = overlay.querySelector("#cashLabel").value.trim() || "Liquidités";
+    if(isNaN(amount)){ toast("Montant invalide."); return; }
+    if(existing){
+      pfUpdateCash(existing.id, { amount, currency, label });
+    } else {
+      pfAddCash({ amount, currency, label });
+    }
+    close();
+    renderPortfolio();
+  });
 }
 
 function renderHoldingsTable(rows){
@@ -677,6 +761,155 @@ function toast(msg){
   setTimeout(()=>t.remove(), 6000);
 }
 
+// ---------------------------------------------------------------
+// Import DEGIRO (export CSV du portefeuille)
+// ---------------------------------------------------------------
+
+/** Parseur CSV respectant les guillemets (les nombres DEGIRO utilisent la
+ * virgule comme séparateur décimal ET le CSV utilise la virgule comme
+ * séparateur de colonnes — un .split(',') naïf casserait tout). */
+function parseCsvLine(line){
+  const result = [];
+  let cur = '', inQuotes = false;
+  for(let i=0; i<line.length; i++){
+    const c = line[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(line[i+1] === '"'){ cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ',') { result.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+/** "1 234,56" (notation française) -> 1234.56 (nombre JS) */
+function parseFrenchNumber(str){
+  if(str == null || str === '') return null;
+  const cleaned = str.replace(/\s/g,'').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Parse un export CSV DEGIRO (colonnes : Produit, Ticker/ISIN, Quantité,
+ * Clôture, Devise, [montant natif], Montant en EUR). Retourne
+ * {positions: [...], cash: [...]}. Les lignes "CASH & CASH FUND..." sont
+ * distinguées des vraies positions.
+ *
+ * IMPORTANT : DEGIRO exporte le prix ACTUEL (Clôture), pas le prix
+ * d'achat réel — ce n'est pas dans l'export. Les positions importées
+ * auront donc un prix d'achat = prix actuel (plus-value à 0 au départ),
+ * à corriger manuellement via le bouton ✎ pour chaque ligne si tu veux
+ * un suivi de performance exact.
+ */
+function parseDegiroCSV(text){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+  if(lines.length < 2) return {positions: [], cash: []};
+  const rows = lines.slice(1).map(parseCsvLine); // ligne 0 = en-têtes
+
+  const positions = [];
+  const cash = [];
+  for(const row of rows){
+    const [name, isin, qtyStr, closeStr, currency] = row;
+    if(!name) continue;
+    if(name.trim().toUpperCase().startsWith("CASH")){
+      const nativeAmountStr = row[5];
+      const amount = parseFrenchNumber(nativeAmountStr);
+      if(amount != null && Math.abs(amount) > 0.001){
+        cash.push({ label: name.trim(), amount, currency: (currency||'EUR').trim() });
+      }
+      continue;
+    }
+    const quantity = parseFrenchNumber(qtyStr);
+    const close = parseFrenchNumber(closeStr);
+    if(!isin || !quantity || close == null) continue; // ligne incomplète, ignorée
+    positions.push({
+      name: name.trim(),
+      isin: isin.trim(),
+      quantity,
+      price: close, // prix ACTUEL, utilisé comme repli de prix d'achat — voir docstring
+      currency: (currency||'EUR').trim(),
+    });
+  }
+  return {positions, cash};
+}
+
+/**
+ * Fait correspondre chaque position DEGIRO (identifiée par ISIN) à notre
+ * snapshot, pour récupérer le bon symbole/pays. Si plusieurs cotations
+ * partagent le même ISIN (cross-listings, voir badge 🌐), préfère celle
+ * dont le domicile réel correspond au pays de cotation.
+ */
+function matchDegiroToSnapshot(positions, snapshotRecords){
+  const byIsin = {};
+  snapshotRecords.forEach(r=>{
+    if(!r.isin) return;
+    (byIsin[r.isin] = byIsin[r.isin] || []).push(r);
+  });
+
+  return positions.map(pos=>{
+    const candidates = byIsin[pos.isin] || [];
+    let match = null;
+    if(candidates.length){
+      const authentic = candidates.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
+      match = (authentic.length ? authentic : candidates)
+        .sort((a,b)=>(b.avgDailyValue||0)-(a.avgDailyValue||0))[0];
+    }
+    return { ...pos, match };
+  });
+}
+
+async function importDegiroCSV(file){
+  const text = await file.text();
+  const { positions, cash } = parseDegiroCSV(text);
+  if(positions.length === 0 && cash.length === 0){
+    toast("Aucune position ou ligne de cash reconnue dans ce fichier.");
+    return;
+  }
+
+  let snap;
+  try{ snap = await loadSnapshot(); }
+  catch(e){ toast("Impossible de charger data-snapshot.json pour faire correspondre les titres : " + e.message); return; }
+
+  const matched = matchDegiroToSnapshot(positions, snap.records);
+  const unmatched = matched.filter(m=>!m.match);
+
+  const name = prompt("Nom du nouveau portefeuille :", "DEGIRO");
+  if(!name) return;
+  const portfolioId = pfCreatePortfolio(name.trim());
+
+  const today = new Date().toISOString().slice(0,10);
+  matched.forEach(m=>{
+    const symbol = m.match ? m.match.symbol : `MANUAL:${m.isin}`;
+    const country = m.match ? m.match.country : null;
+    pfAddHolding({
+      symbol, name: m.name, country, isin: m.isin,
+      quantity: m.quantity, purchasePrice: m.price, purchaseDate: today,
+      priceCurrency: m.currency, // devise EXACTE du fichier DEGIRO (GBX incluse) — fiable, pas de déduction nécessaire
+    }, portfolioId);
+  });
+  cash.forEach(c=>{
+    pfAddCash({ label: c.label, amount: c.amount, currency: c.currency }, portfolioId);
+  });
+
+  pfSetActivePortfolio(portfolioId);
+  renderSwitcher();
+  renderPortfolio();
+
+  let msg = `Portefeuille "${name.trim()}" créé : ${matched.length} position(s), ${cash.length} ligne(s) de cash importées.`;
+  msg += ` ⚠ Le prix d'achat = prix actuel du fichier (DEGIRO ne fournit pas le vrai prix de revient) — corrige chaque position via ✎ si tu veux une vraie plus-value.`;
+  if(unmatched.length){
+    msg += ` ${unmatched.length} titre(s) non retrouvé(s) dans le snapshot (prix ne se mettra pas à jour automatiquement) : ${unmatched.map(m=>m.name).join(', ')}.`;
+  }
+  toast(msg);
+}
+
 function renderSwitcher(){
   const wrap = document.getElementById("pfSwitcher");
   const portfolios = pfGetPortfolios();
@@ -738,7 +971,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.5.0";
+  if(versionEl) versionEl.textContent = "v6.6.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
@@ -770,6 +1003,14 @@ function init(){
 
   document.getElementById("importBtn").addEventListener("click", ()=>{
     document.getElementById("importFile").click();
+  });
+  document.getElementById("importDegiroBtn").addEventListener("click", ()=>{
+    document.getElementById("importDegiroFile").click();
+  });
+  document.getElementById("importDegiroFile").addEventListener("change", (e)=>{
+    const file = e.target.files[0];
+    if(file) importDegiroCSV(file);
+    e.target.value = "";
   });
   document.getElementById("importFile").addEventListener("change", (e)=>{
     const file = e.target.files[0];

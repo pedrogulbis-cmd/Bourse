@@ -36,7 +36,7 @@ function pfMigrateFromV1(){
   }catch(e){}
   const id = pfNewId();
   const store = {
-    portfolios: [{ id, name: "Portefeuille principal", holdings, history }],
+    portfolios: [{ id, name: "Portefeuille principal", holdings, history, cash: [] }],
     activeId: id,
   };
   pfSaveStore(store);
@@ -85,7 +85,7 @@ function pfSetActivePortfolio(id){
 function pfCreatePortfolio(name){
   const store = pfLoadStore();
   const id = pfNewId();
-  store.portfolios.push({ id, name: name || "Nouveau portefeuille", holdings: [], history: [] });
+  store.portfolios.push({ id, name: name || "Nouveau portefeuille", holdings: [], history: [], cash: [] });
   store.activeId = id;
   pfSaveStore(store);
   return id;
@@ -152,6 +152,53 @@ function pfUpdateHolding(id, updates, portfolioId){
   holdings[idx] = { ...holdings[idx], ...updates };
   pfSaveHoldings(holdings, portfolioId);
   return {ok:true, message:"Position mise à jour.", holding: holdings[idx]};
+}
+
+// ---------------------------------------------------------------
+// Cash — argent disponible mais pas encore investi (liquidités), compté
+// dans la valeur totale du portefeuille. Plusieurs lignes possibles par
+// portefeuille (ex. une par devise), chacune avec un libellé libre.
+// ---------------------------------------------------------------
+function pfGetCash(portfolioId){
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  return p ? (p.cash || []) : [];
+}
+
+function pfSaveCash(cashList, portfolioId){
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  if(!p) return false;
+  p.cash = cashList;
+  return pfSaveStore(store);
+}
+
+function pfAddCash(entry, portfolioId){
+  const cashList = pfGetCash(portfolioId);
+  cashList.push({
+    id: "c_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
+    label: entry.label || "Liquidités",
+    amount: entry.amount,
+    currency: entry.currency || "EUR",
+    addedAt: Date.now(),
+  });
+  pfSaveCash(cashList, portfolioId);
+  return cashList;
+}
+
+function pfRemoveCash(id, portfolioId){
+  const cashList = pfGetCash(portfolioId).filter(c=>c.id!==id);
+  pfSaveCash(cashList, portfolioId);
+  return cashList;
+}
+
+function pfUpdateCash(id, updates, portfolioId){
+  const cashList = pfGetCash(portfolioId);
+  const idx = cashList.findIndex(c=>c.id===id);
+  if(idx === -1) return {ok:false, message:"Ligne de cash introuvable."};
+  cashList[idx] = { ...cashList[idx], ...updates };
+  pfSaveCash(cashList, portfolioId);
+  return {ok:true, message:"Cash mis à jour."};
 }
 
 /** Un titre est-il détenu dans CE portefeuille (actif par défaut) ? Ne
@@ -252,7 +299,7 @@ function pfImportData(jsonText, mode){
   if(Array.isArray(data.portfolios)){
     incomingPortfolios = data.portfolios;
   } else if(Array.isArray(data.holdings)){
-    incomingPortfolios = [{ name: "Portefeuille importé", holdings: data.holdings, history: data.history || [] }];
+    incomingPortfolios = [{ name: "Portefeuille importé", holdings: data.holdings, history: data.history || [], cash: data.cash || [] }];
   } else {
     return {ok:false, message:"Format inattendu : ni portefeuilles, ni liste de positions trouvés."};
   }
@@ -271,12 +318,16 @@ function pfImportData(jsonText, mode){
         existing.history.forEach(p=>histByDate[p.date]=p);
         (incoming.history||[]).forEach(p=>{ if(!histByDate[p.date]) histByDate[p.date]=p; });
         existing.history = Object.values(histByDate).sort((a,b)=>a.date.localeCompare(b.date));
+
+        if(!existing.cash) existing.cash = [];
+        const existingCashIds = new Set(existing.cash.map(c=>c.id));
+        (incoming.cash||[]).forEach(c=>{ if(!existingCashIds.has(c.id)) existing.cash.push(c); });
       } else {
-        store.portfolios.push({ id: pfNewId(), name: incoming.name || "Portefeuille importé", holdings: incoming.holdings||[], history: incoming.history||[] });
+        store.portfolios.push({ id: pfNewId(), name: incoming.name || "Portefeuille importé", holdings: incoming.holdings||[], history: incoming.history||[], cash: incoming.cash||[] });
       }
     });
   } else {
-    store.portfolios = incomingPortfolios.map(p=>({ id: pfNewId(), name: p.name || "Portefeuille importé", holdings: p.holdings||[], history: p.history||[] }));
+    store.portfolios = incomingPortfolios.map(p=>({ id: pfNewId(), name: p.name || "Portefeuille importé", holdings: p.holdings||[], history: p.history||[], cash: p.cash||[] }));
     store.activeId = store.portfolios[0].id;
   }
 

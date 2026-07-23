@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=6.5.0"></script>
+<script src="theme.js?v=6.6.0"></script>
 <title>Le Grand Livre — Portefeuille</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,10 +39,13 @@
   <!-- SUMMARY -->
   <div class="section-title"><span class="idx">01</span> Vue d'ensemble</div>
   <div id="pfSummary" class="pf-summary"></div>
+  <div id="cashWrap"></div>
   <div class="io-row">
     <button class="btn-io" id="exportBtn">↓ Exporter mes données</button>
     <button class="btn-io" id="importBtn">↑ Importer un fichier</button>
+    <button class="btn-io" id="importDegiroBtn">↑ Importer DEGIRO (CSV)</button>
     <input type="file" id="importFile" accept="application/json" style="display:none">
+    <input type="file" id="importDegiroFile" accept=".csv" style="display:none">
   </div>
 
   <!-- ALLOCATION -->
@@ -88,9 +91,9 @@
 
 </div>
 
-<script src="data.js?v=6.5.0"></script>
-<script src="portfolio-store.js?v=6.5.0"></script>
+<script src="data.js?v=6.6.0"></script>
+<script src="portfolio-store.js?v=6.6.0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
-<script src="portfolio.js?v=6.5.0"></script>
+<script src="portfolio.js?v=6.6.0"></script>
 </body>
 </html>

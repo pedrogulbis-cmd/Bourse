@@ -366,6 +366,20 @@ td.addcol{text-align:center;width:36px;}
 }
 .btn-io:hover{border-color:var(--brass-bright);color:var(--brass-bright);}
 
+.cash-list{display:flex;flex-direction:column;gap:6px;margin-bottom:18px;}
+.cash-row{
+  display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--hairline);
+  border-radius:5px;padding:9px 14px;font-size:0.85rem;
+}
+.cash-label{color:var(--ink-dim);flex:1;}
+.cash-amount{font-family:'IBM Plex Mono',monospace;color:var(--ink);}
+.cash-eur{color:var(--ink-faint);font-size:0.85em;}
+.cash-list .pf-add-btn{
+  align-self:flex-start;background:var(--panel);border:1px dashed var(--hairline-bright);color:var(--ink-faint);
+  border-radius:20px;padding:7px 16px;font-size:0.8rem;cursor:pointer;transition:.12s;
+}
+.cash-list .pf-add-btn:hover{border-color:var(--brass-bright);color:var(--brass-bright);}
+
 .allocation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:28px;}
 .allocation-card{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:16px;}
 .allocation-card h4{margin:0 0 12px;font-size:0.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:500;}

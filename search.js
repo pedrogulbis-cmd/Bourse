@@ -88,7 +88,7 @@ function renderResults(matches, query){
   shown.forEach(s=>{
     const cm = countryMeta(s.country);
     html += `<tr data-symbol="${s.symbol}">
-      <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}${s.assetType==='etf'?' <span class="etf-badge" title="ETF — exclu du calcul des stratégies du screener">ETF</span>':''}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
+      <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
       <td class="num">${s.price!=null?s.price.toLocaleString('fr-FR',{maximumFractionDigits:2}):'—'}</td>
       <td class="num">${fmtMcap(s.mcap)}</td>
       <td class="num">${fmtNum(s.pe)}</td>
@@ -199,7 +199,7 @@ function doSearch(){
 let debounceTimer = null;
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v6.9.0";
+  if(versionEl) versionEl.textContent = "v7.0.0";
 
   const statusEl = document.getElementById("searchStatus");
   statusEl.textContent = "Chargement de l'univers…";

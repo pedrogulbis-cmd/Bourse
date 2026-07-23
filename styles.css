@@ -443,11 +443,6 @@ table.holdings td.num.neg{color:var(--oxide-bright);}
 .analyst-badge.none{color:var(--ink-faint);}
 .home-badge{margin-left:5px;cursor:help;font-size:0.85em;opacity:0.75;}
 .home-badge:hover{opacity:1;}
-.etf-badge{
-  display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:600;
-  background:rgba(139,124,182,0.18);color:#B8A6E8;font-family:'IBM Plex Mono',monospace;
-  vertical-align:middle;letter-spacing:0.02em;
-}
 .remove-btn{background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:0.9rem;padding:2px 6px;}
 .remove-btn:hover{color:var(--oxide-bright);}
 tr.fx-warn{background:rgba(200,110,50,0.06);}

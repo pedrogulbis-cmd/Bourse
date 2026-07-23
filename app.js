@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.5.0";
+const APP_VERSION = "v7.6.0";
 
 let state = {
   strategy: "trending_value",
@@ -330,7 +330,7 @@ function renderResults(){
   const strat = STRATEGIES[state.lastRunMeta.strategy];
   title.textContent = `${strat.name} — ${state.lastResults.length} entreprises`;
   const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
-  meta.innerHTML = `Échantillon analysé : ${state.lastRunMeta.poolCount} / ${state.lastRunMeta.universeCount} titres de l'univers réel · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
+  meta.innerHTML = `${state.lastRunMeta.poolCount} titres passés dans le calcul (sur ${state.lastRunMeta.universeCount} au total pour ces pays, avant filtrage capitalisation/liquidité) · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
 
   // Indicatif uniquement : combien de positions déjà détenues (portefeuille
   // actif) ressortent dans ce classement, et à quel rang.

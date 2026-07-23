@@ -232,13 +232,18 @@ def fetch_country_etfs(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_CO
     return out
 
 
-def fetch_euronext_bucket(mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debug=False, countries=None):
+def fetch_euronext_bucket(mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debug=False, countries=None, is_etf=False):
     """Interroge TOUS les segments Euronext (France, Belgique, Pays-Bas,
-    Portugal, Irlande, Italie) EN UNE SEULE requête groupée, puis classe
-    chaque résultat par son pays de domiciliation RÉEL (champ `country`),
-    pas par le segment où il est coté. Corrige les cas comme X-FAB
-    (domiciliée en Belgique, cotée à Paris) qui passent entre les mailles
-    d'une requête par pays isolée.
+    Portugal, Irlande, Italie, Luxembourg) EN UNE SEULE requête groupée, puis
+    classe chaque résultat par son pays de domiciliation RÉEL (champ
+    `country`), pas par le segment où il est coté. Corrige les cas comme
+    X-FAB (domiciliée en Belgique, cotée à Paris) qui passent entre les
+    mailles d'une requête par pays isolée.
+
+    is_etf=True récupère les ETF de ce même groupe de marchés au lieu des
+    actions (même logique de classement par domicile réel — beaucoup d'ETF
+    domiciliés en Irlande/Luxembourg sont cotés sur plusieurs segments
+    Euronext à la fois).
 
     Retourne un dict {code_pays: [dicts prêts pour la base]}."""
     target_countries = countries or EURONEXT_COUNTRIES
@@ -248,15 +253,23 @@ def fetch_euronext_bucket(mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debu
         Query()
         .select(*FIELDS)
         .set_markets(*markets)
-        .where(col("market_cap_basic") >= mcap_floor)
         .limit(max_results * len(markets))
         .order_by("market_cap_basic", ascending=False)
     )
+    if is_etf:
+        query = query.where2(And(
+            Column("type") == "fund",
+            Column("typespecs").has(["etf"]),
+            Column("market_cap_basic") >= mcap_floor,
+        ))
+    else:
+        query = query.where(col("market_cap_basic") >= mcap_floor)
 
     total, df = query.get_scanner_data()
 
     if debug:
-        print(f"  [TradingView] Euronext groupé ({', '.join(markets)}) : {total} titres trouvés au total")
+        kind = "ETF" if is_etf else "actions"
+        print(f"  [TradingView] Euronext groupé {kind} ({', '.join(markets)}) : {total} titres trouvés au total")
         print(f"  [TradingView] échantillon :\n{df.head(5).to_string()}")
 
     # reverse-lookup : nom TradingView du pays -> notre code pays
@@ -273,7 +286,10 @@ def fetch_euronext_bucket(mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debu
         if not code:
             unmatched += 1
             continue  # domicilié hors de notre liste Euronext ciblée (ex. société US cotée à Paris) — ignoré ici
-        buckets[code].append(_row_to_record(row, code))
+        rec = _row_to_record(row, code)
+        if is_etf:
+            rec["asset_type"] = "etf"
+        buckets[code].append(rec)
 
     if debug and unmatched:
         print(f"  [TradingView] {unmatched} titres Euronext ignorés (domiciliés hors des pays ciblés)")

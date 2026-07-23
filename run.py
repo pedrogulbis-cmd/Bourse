@@ -78,15 +78,22 @@ def main():
                 for c in euronext_targets:
                     dbmod.clear_universe_for_country(conn, c)
                 buckets = universe.fetch_euronext_bucket(args.mcap_floor, debug=args.debug, countries=euronext_targets)
+                etf_buckets = {}
+                if not args.no_etfs:
+                    try:
+                        etf_buckets = universe.fetch_euronext_bucket(args.mcap_floor, debug=args.debug, countries=euronext_targets, is_etf=True)
+                    except Exception as e:
+                        print(f"  ⚠ échec ETF groupe Euronext : {e}")
                 for c in euronext_targets:
-                    records = buckets.get(c, [])
+                    records = buckets.get(c, []) + etf_buckets.get(c, [])
                     if args.limit:
                         records = records[: args.limit]
                     for r in records:
                         dbmod.upsert_universe(conn, r["symbol"], r["name"], r["country"], r["sector"], r.get("mcap"), r.get("isin"), r.get("home_country"), r.get("asset_type", "stock"))
                         dbmod.upsert_fundamentals(conn, r["symbol"], r, error=None)
                     total_ok += len(records)
-                    print(f"  {c} : {len(records)} titres (groupe Euronext, classés par domicile réel)")
+                    n_etf = sum(1 for r in records if r.get("asset_type") == "etf")
+                    print(f"  {c} : {len(records)} titres (groupe Euronext, classés par domicile réel)" + (f" (dont {n_etf} ETF)" if n_etf else ""))
                 conn.commit()
             except Exception as e:
                 print(f"  ⚠ échec groupe Euronext ({', '.join(euronext_targets)}) : {e}")

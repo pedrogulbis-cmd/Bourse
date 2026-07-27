@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.14.0";
+const APP_VERSION = "v7.15.0";
 
 let state = {
   strategy: "trending_value",
@@ -388,12 +388,14 @@ function renderResults(){
   const title = document.getElementById("resultsTitle");
   const meta = document.getElementById("resultsMeta");
   const exportBtn = document.getElementById("exportBtn");
+  const exportExcelBtn = document.getElementById("exportExcelBtn");
 
   if(!state.lastResults || state.lastResults.length===0){
     container.innerHTML = `<div class="empty-state"><div class="big">Aucun résultat</div>Ajustez les filtres et relancez le screening.</div>`;
     title.textContent = "Aucun résultat";
     meta.textContent = "";
     exportBtn.style.display = "none";
+    exportExcelBtn.style.display = "none";
     return;
   }
 
@@ -421,6 +423,7 @@ function renderResults(){
   }
 
   exportBtn.style.display = "inline-block";
+  exportExcelBtn.style.display = "inline-block";
 
   let rows = [...state.lastResults];
   if(state.sortCol !== "rank"){
@@ -534,6 +537,51 @@ function exportCSV(){
   URL.revokeObjectURL(url);
 }
 
+function exportExcel(){
+  if(!state.lastResults.length) return;
+  if(typeof XLSX === "undefined"){
+    toast("La librairie d'export Excel n'a pas pu se charger depuis le CDN — vérifie ta connexion et recharge la page.");
+    return;
+  }
+  // En-têtes lisibles (contrairement au CSV, un fichier Excel s'ouvre
+  // directement pour consultation — autant que les colonnes soient claires
+  // sans avoir à se souvenir du nom technique de chaque champ).
+  const rows = state.lastResults.map((s,i)=>({
+    "Rang": i+1,
+    "Titre": s.name || "",
+    "Symbole": s.symbol,
+    "ISIN": s.isin || "",
+    "Pays": s.country,
+    "Secteur": s.sector || "",
+    "Prix": s.price,
+    "Capitalisation": s.mcap,
+    "Score": s.vc2Score,
+    "Percentile": s.vc2Rank,
+    "Momentum 3M (%)": s.mom3,
+    "Momentum 6M (%)": s.mom6,
+    "P/E": s.pe,
+    "P/B": s.pb,
+    "P/S": s.ps,
+    "P/CF": s.pcf,
+    "Rend. EBITDA": s.ebitdaYield,
+    "Rend. Dividende": s.divYield,
+    "Rend. Actionnarial": s.shareholderYield,
+    "Note analystes": s.analystLabel || "",
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  // Largeur de colonnes approximative, pour ne pas ouvrir un fichier avec
+  // tout tronqué visuellement dans Excel/LibreOffice.
+  ws["!cols"] = Object.keys(rows[0]).map(key => ({
+    wch: Math.max(key.length, 10, ...rows.map(r => String(r[key] ?? "").length)) + 2,
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const strat = STRATEGIES[state.strategy];
+  XLSX.utils.book_append_sheet(wb, ws, (strat ? strat.name : "Résultats").slice(0,31)); // Excel limite les noms d'onglet à 31 caractères
+  XLSX.writeFile(wb, `${state.strategy}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
 function toast(msg){
   const t = document.createElement("div");
   t.className = "toast";
@@ -584,6 +632,7 @@ function init(){
 
   document.getElementById("runBtn").addEventListener("click", runScreening);
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
+  document.getElementById("exportExcelBtn").addEventListener("click", exportExcel);
 }
 
 // ---------------------------------------------------------------

@@ -1204,7 +1204,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.14.0";
+  if(versionEl) versionEl.textContent = "v7.15.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();

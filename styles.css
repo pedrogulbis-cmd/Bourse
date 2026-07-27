@@ -320,6 +320,11 @@ footer .disclaimer{margin-top:8px;color:var(--ink-faint);}
 
 /* ---------------- Sélecteur multi-portefeuilles ---------------- */
 .pf-switcher{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 20px;}
+.holdings-suffix-row{display:flex;gap:10px;align-items:center;margin-bottom:20px;font-size:0.78rem;color:var(--ink-faint);}
+.holdings-suffix-row select{
+  background:var(--panel);border:1px solid var(--hairline-bright);color:var(--ink);
+  padding:5px 10px;border-radius:4px;font-size:0.8rem;
+}
 .pf-tab{
   display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--hairline-bright);
   border-radius:20px;padding:7px 8px 7px 16px;font-size:0.82rem;color:var(--ink-dim);cursor:pointer;transition:.12s;

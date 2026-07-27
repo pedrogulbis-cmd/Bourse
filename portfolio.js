@@ -57,9 +57,37 @@ async function loadIndexHistory(){
   }
 }
 
+const HOLDINGS_SUFFIX_KEY = "lgl_holdings_history_suffix"; // localStorage, personnel — jamais partagé sur GitHub
+
+function getHoldingsHistorySuffix(){
+  try{ return localStorage.getItem(HOLDINGS_SUFFIX_KEY) || ""; }
+  catch(e){ return ""; }
+}
+function setHoldingsHistorySuffix(suffix){
+  try{ localStorage.setItem(HOLDINGS_SUFFIX_KEY, suffix || ""); }catch(e){}
+}
+
+/** Consulte l'annuaire partagé (déposé par fetch_holdings_history.py à
+ * chaque lancement avec --suffix) pour savoir quels fichiers existent —
+ * évite d'avoir à taper un nom à la main, et permet de proposer
+ * automatiquement "popo" si quelqu'un a lancé le script avec --suffix popo. */
+async function loadHoldingsHistorySuffixes(){
+  try{
+    const url = "./holdings-history-index.json?t=" + Date.now();
+    const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
+    if(!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json.suffixes) ? json.suffixes : [];
+  }catch(e){
+    return [];
+  }
+}
+
 async function loadHoldingsHistory(){
   try{
-    const url = "./holdings-history.json?t=" + Date.now();
+    const suffix = getHoldingsHistorySuffix();
+    const filename = suffix ? `holdings-history-${suffix}.json` : "holdings-history.json";
+    const url = `./${filename}?t=` + Date.now();
     const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
     if(!res.ok) return null;
     const json = await res.json();
@@ -1116,11 +1144,31 @@ function renderSwitcher(){
   });
 }
 
+async function initHoldingsSuffixSelector(){
+  const suffixes = await loadHoldingsHistorySuffixes();
+  if(suffixes.length === 0) return; // personne n'a encore utilisé --suffix -> pas besoin d'afficher ce réglage
+
+  const row = document.getElementById("holdingsSuffixRow");
+  const select = document.getElementById("holdingsSuffixSelect");
+  const current = getHoldingsHistorySuffix();
+
+  select.innerHTML = `<option value="">Aucun (fichier par défaut)</option>` +
+    suffixes.map(s => `<option value="${s}" ${s===current?'selected':''}>${s}</option>`).join('');
+  row.style.display = "flex";
+
+  select.addEventListener("change", ()=>{
+    setHoldingsHistorySuffix(select.value);
+    toast(select.value ? `Historique "${select.value}" sélectionné — s'appliquera au prochain calcul du graphique.` : "Retour au fichier par défaut.");
+    renderChart();
+  });
+}
+
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.12.0";
+  if(versionEl) versionEl.textContent = "v7.13.0";
   renderSwitcher();
   renderPortfolio();
+  initHoldingsSuffixSelector();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
   document.querySelectorAll('#benchmarkChips input[type=checkbox]').forEach(cb=>{
     cb.addEventListener("change", renderChart);

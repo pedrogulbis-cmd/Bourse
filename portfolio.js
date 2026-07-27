@@ -908,6 +908,155 @@ async function importDegiroCSV(file){
   toast(msg);
 }
 
+// ---------------------------------------------------------------
+// Import Fortuneo (relevé de portefeuille PDF)
+// ---------------------------------------------------------------
+
+const MOIS_FR = {
+  janvier:1, février:2, fevrier:2, mars:3, avril:4, mai:5, juin:6,
+  juillet:7, août:8, aout:8, septembre:9, octobre:10, novembre:11, décembre:12, decembre:12,
+};
+
+/** "1 496,66" ou "-97,63" (notation française, espace = séparateur de
+ * milliers) -> nombre JS. */
+function parseFrenchAmount(str){
+  if(str == null) return null;
+  const cleaned = str.replace(/\s/g,'').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+}
+
+/** Extrait tout le texte d'un PDF via PDF.js (chargé sur cette page). */
+async function extractPdfText(file){
+  if(typeof pdfjsLib === "undefined"){
+    throw new Error("La librairie de lecture PDF (PDF.js) n'a pas pu se charger depuis le CDN — vérifie ta connexion et recharge la page.");
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = "";
+  for(let i = 1; i <= pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(item => item.str).join(" ") + "\n";
+  }
+  return fullText;
+}
+
+/**
+ * Parse le texte extrait d'un relevé de portefeuille Fortuneo. Repère
+ * chaque ligne de titre en s'ancrant sur le code ISIN (identifiant fiable
+ * et non ambigu), puis lit les nombres qui le suivent dans l'ordre connu
+ * du tableau : Quantité, Cours, Date, Valorisation €, Valorisation %,
+ * Prix de revient fiscal, +/- Value latente.
+ *
+ * Le "Prix de revient fiscal" donne le VRAI prix d'achat par action —
+ * contrairement à DEGIRO, pas besoin de repli sur le prix actuel.
+ * Fortuneo affiche tout déjà converti en euros, donc priceCurrency="EUR"
+ * pour toutes les lignes.
+ *
+ * N'a pas pu être testé sur un vrai relevé (extraction PDF réelle) —
+ * à vérifier et ajuster si le format ne correspond pas exactement.
+ */
+function parseFortuneoPDF(text){
+  const positions = [];
+  const isinRegex = /([A-Z]{2}[A-Z0-9]{9}[0-9])\s+(\d+)\s+(-?[\d\s]+,\d+)\s+(\d{2}\/\d{2}\/\d{2,4})\s+(-?[\d\s]+,\d+)\s+(-?[\d\s]+,\d+)\s+(-?[\d\s]+,\d+)\s+(-?[\d\s]+,\d+)/g;
+
+  let lastEnd = 0;
+  let match;
+  while((match = isinRegex.exec(text)) !== null){
+    // Fenêtre limitée aux ~200 derniers caractères avant l'ISIN, puis on
+    // n'garde que la partie finale qui ressemble à un nom de valeur (suite
+    // de lettres majuscules) — les noms de sociétés sont toujours en
+    // majuscules dans ce type de relevé, contrairement au reste du texte
+    // environnant (titres, adresse, numéro de compte avec des chiffres).
+    const searchStart = Math.max(lastEnd, match.index - 200);
+    const rawNameSegment = text.slice(searchStart, match.index);
+    const nameMatch = rawNameSegment.match(/[A-ZÀ-Ÿ][A-ZÀ-Ÿ&.\-'() ]*$/);
+    const cleanedSegment = nameMatch ? nameMatch[0] : rawNameSegment;
+    // Le nom de la valeur est le dernier "mot" significatif juste avant
+    // l'ISIN (nettoyage des en-têtes de section "■ Actions Europe" etc.
+    // et des retours à la ligne).
+    const name = cleanedSegment
+      .replace(/■\s*Actions\s+\w+(\s*\(suite\))?/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    positions.push({
+      name: name || match[1],
+      isin: match[1],
+      quantity: parseInt(match[2], 10),
+      currentPrice: parseFrenchAmount(match[3]),
+      valuationEUR: parseFrenchAmount(match[5]),
+      costBasisPerShare: parseFrenchAmount(match[7]),
+    });
+    lastEnd = isinRegex.lastIndex;
+  }
+
+  const dateMatch = text.match(/Au\s+(\d{1,2})\s+(\S+)\s+(\d{4})/i);
+  let statementDate = null;
+  if(dateMatch){
+    const monthNum = MOIS_FR[dateMatch[2].toLowerCase()];
+    if(monthNum){
+      statementDate = `${dateMatch[3]}-${String(monthNum).padStart(2,'0')}-${dateMatch[1].padStart(2,'0')}`;
+    }
+  }
+
+  return { positions, statementDate };
+}
+
+async function importFortuneoPDF(file){
+  let text;
+  try{
+    text = await extractPdfText(file);
+  }catch(e){
+    toast("Échec de lecture du PDF : " + e.message);
+    return;
+  }
+
+  const { positions, statementDate } = parseFortuneoPDF(text);
+  if(positions.length === 0){
+    toast("Aucune position reconnue dans ce PDF — le format ne correspond peut-être pas exactement à ce qui était attendu. Dis-le à Claude pour ajuster le parseur.");
+    return;
+  }
+
+  let snap;
+  try{ snap = await loadSnapshot(); }
+  catch(e){ toast("Impossible de charger data-snapshot.json pour faire correspondre les titres : " + e.message); return; }
+
+  const matched = matchDegiroToSnapshot(
+    positions.map(p=>({ name:p.name, isin:p.isin, quantity:p.quantity, price:p.costBasisPerShare, currency:"EUR" })),
+    snap.records
+  );
+  const unmatched = matched.filter(m=>!m.match);
+
+  const name = prompt("Nom du nouveau portefeuille :", "Fortuneo");
+  if(!name) return;
+  const portfolioId = pfCreatePortfolio(name.trim());
+
+  const purchaseDate = statementDate || new Date().toISOString().slice(0,10);
+  matched.forEach(m=>{
+    const symbol = m.match ? m.match.symbol : `MANUAL:${m.isin}`;
+    const country = m.match ? m.match.country : null;
+    pfAddHolding({
+      symbol, name: m.name, country, isin: m.isin,
+      quantity: m.quantity, purchasePrice: m.price, purchaseDate,
+      priceCurrency: "EUR", // Fortuneo affiche tout déjà converti en euros
+    }, portfolioId);
+  });
+
+  pfSetActivePortfolio(portfolioId);
+  renderSwitcher();
+  renderPortfolio();
+
+  let msg = `Portefeuille "${name.trim()}" créé : ${matched.length} position(s) importées, avec le VRAI prix de revient fiscal Fortuneo (pas une approximation).`;
+  msg += " Aucune ligne de cash détectée dans ce type de relevé — ajoute-la manuellement si besoin (+ Ajouter du cash).";
+  if(unmatched.length){
+    msg += ` ${unmatched.length} titre(s) non retrouvé(s) dans le snapshot : ${unmatched.map(m=>m.name).join(', ')}.`;
+  }
+  toast(msg);
+}
+
 function renderSwitcher(){
   const wrap = document.getElementById("pfSwitcher");
   const portfolios = pfGetPortfolios();
@@ -969,7 +1118,7 @@ function renderSwitcher(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.11.0";
+  if(versionEl) versionEl.textContent = "v7.12.0";
   renderSwitcher();
   renderPortfolio();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);
@@ -1008,6 +1157,14 @@ function init(){
   document.getElementById("importDegiroFile").addEventListener("change", (e)=>{
     const file = e.target.files[0];
     if(file) importDegiroCSV(file);
+    e.target.value = "";
+  });
+  document.getElementById("importFortuneoBtn").addEventListener("click", ()=>{
+    document.getElementById("importFortuneoFile").click();
+  });
+  document.getElementById("importFortuneoFile").addEventListener("change", (e)=>{
+    const file = e.target.files[0];
+    if(file) importFortuneoPDF(file);
     e.target.value = "";
   });
   document.getElementById("importFile").addEventListener("change", (e)=>{

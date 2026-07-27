@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.11.0"></script>
+<script src="theme.js?v=7.12.0"></script>
 <title>Le Grand Livre — Portefeuille</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,8 +44,10 @@
     <button class="btn-io" id="exportBtn">↓ Exporter mes données</button>
     <button class="btn-io" id="importBtn">↑ Importer un fichier</button>
     <button class="btn-io" id="importDegiroBtn">↑ Importer DEGIRO (CSV)</button>
+    <button class="btn-io" id="importFortuneoBtn">↑ Importer Fortuneo (PDF)</button>
     <input type="file" id="importFile" accept="application/json" style="display:none">
     <input type="file" id="importDegiroFile" accept=".csv" style="display:none">
+    <input type="file" id="importFortuneoFile" accept=".pdf" style="display:none">
   </div>
 
   <!-- ALLOCATION -->
@@ -91,9 +93,10 @@
 
 </div>
 
-<script src="data.js?v=7.11.0"></script>
-<script src="portfolio-store.js?v=7.11.0"></script>
+<script src="data.js?v=7.12.0"></script>
+<script src="portfolio-store.js?v=7.12.0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
-<script src="portfolio.js?v=7.11.0"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+<script src="portfolio.js?v=7.12.0"></script>
 </body>
 </html>

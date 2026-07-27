@@ -331,7 +331,7 @@ function renderHoldingsTable(rows){
       <td class="num">${r.quantity}</td>
       <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
       <td>${r.purchaseDate}</td>
-      <td class="num">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:'—'}</td>
+      <td class="num">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:(r.isin?`<button class="rematch-btn" data-rematch-id="${r.id}" data-rematch-isin="${r.isin}" title="Rechercher à nouveau ce titre dans le snapshot actuel">🔄 Rechercher</button>`:'—')}</td>
       <td class="num">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>
       <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
       <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
@@ -366,11 +366,50 @@ function renderHoldingsTable(rows){
     });
   });
 
+  wrap.querySelectorAll("[data-rematch-id]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      rematchHolding(btn.dataset.rematchId, btn.dataset.rematchIsin);
+    });
+  });
+
   wrap.querySelectorAll("[data-move-id]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       openMoveHoldingModal(btn.dataset.moveId);
     });
   });
+}
+
+/**
+ * Retente une correspondance par ISIN contre le snapshot ACTUEL pour une
+ * position dont le symbole n'a jamais été résolu (ex. importée avant que
+ * le titre soit couvert par le scraper — cas typique quand on relève le
+ * plafond de récupération après coup, comme pour Blue Cap AG). Ne touche
+ * ni au prix d'achat ni à la quantité, seulement au symbole/pays.
+ */
+async function rematchHolding(holdingId, isin){
+  let snap;
+  try{ snap = await loadSnapshot(); }
+  catch(e){ toast("Impossible de charger le snapshot : " + e.message); return; }
+
+  const candidates = snap.records.filter(r => r.isin === isin);
+  if(candidates.length === 0){
+    toast(`Toujours introuvable pour l'ISIN ${isin} dans le snapshot actuel.`);
+    return;
+  }
+  // Même logique que l'import DEGIRO/Fortuneo : préfère la cotation dont
+  // le domicile réel correspond au pays de cotation, puis la plus liquide.
+  const authentic = candidates.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
+  const best = (authentic.length ? authentic : candidates)
+    .sort((a,b)=>(b.avgDailyValue||0)-(a.avgDailyValue||0))[0];
+
+  const portfolioId = pfGetActivePortfolioId();
+  const result = pfUpdateHolding(holdingId, { symbol: best.symbol, country: best.country }, portfolioId);
+  if(result.ok){
+    toast(`${best.name} retrouvée (${best.symbol}) — prix maintenant à jour.`);
+    renderPortfolio();
+  } else {
+    toast("Échec : " + result.message);
+  }
 }
 
 async function openEditHoldingModal(holdingId){
@@ -1165,7 +1204,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.13.0";
+  if(versionEl) versionEl.textContent = "v7.14.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();

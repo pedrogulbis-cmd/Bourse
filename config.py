@@ -101,7 +101,14 @@ DEFAULT_MCAP_FLOOR = 0
 # les USA de ramener des dizaines de milliers de microcaps). Relevé à 15000
 # pour couvrir l'univers complet réel (ex. ~8000 titres US, ~3900 Japon,
 # ~2600 Canada observés sans filtre sur tradingview.com) avec de la marge.
-MAX_UNIVERSE_PER_COUNTRY = 15000
+# Garde-fou : nombre max de titres récupérés par pays. Relevé à 50000 —
+# volontairement très large ("illimité en pratique") — car un plafond plus
+# bas, combiné au tri par capitalisation décroissante, coupait les petites
+# capitalisations locales avant même de les atteindre : l'Allemagne compte
+# à elle seule ~29000 titres (beaucoup de méga-caps étrangères cross-cotées
+# sur ses bourses régionales), ce qui poussait de vraies PME allemandes
+# comme Blue Cap AG (~87M€) hors d'un plafond à 15000.
+MAX_UNIVERSE_PER_COUNTRY = 50000
 
 DB_PATH = "screener.db"
 SNAPSHOT_PATH = "data-snapshot.json"  # à ajuster si scraper/ est un sous-dossier du site (ex. "../data-snapshot.json")

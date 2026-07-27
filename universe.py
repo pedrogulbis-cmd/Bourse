@@ -171,12 +171,15 @@ def fetch_country_stocks(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_
         ticker = row.get("ticker")
         if not ticker or ticker.startswith(EXCLUDED_EXCHANGE_PREFIXES):
             continue
-        # Plus aucune exclusion par pays ici (contrairement aux versions
-        # précédentes, qui créaient un jeu d'équilibriste sans fin entre
-        # ADR de blue chips et holdings de transport maritime). On garde
-        # TOUT ce que renvoie TradingView pour ce marché (is_primary suffit
-        # à écarter le bruit) — le pays de domiciliation réel est capturé à
-        # part (home_country) pour affichage, sans influencer le classement.
+        # Pas d'exclusion par pays ici — on garde tout ce que renvoie
+        # TradingView pour ce marché (is_primary suffit à écarter le bruit).
+        # Le risque de "noyade" des petites capitalisations locales par des
+        # méga-caps étrangères cross-cotées (ex. NVIDIA en Allemagne) est
+        # géré autrement : en levant le plafond de récupération par pays
+        # (MAX_UNIVERSE_PER_COUNTRY, voir config.py) plutôt qu'en excluant
+        # — ça évite de recasser des cas comme Global Ship Lease, dont le
+        # domicile déclaré ("Royaume-Uni") est un pays qu'on couvre, mais
+        # dont la cotation primaire réelle n'est PAS celle qu'on couvre.
         out.append(_row_to_record(row, country_code))
 
     return out

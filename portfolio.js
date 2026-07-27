@@ -71,6 +71,63 @@ function setHoldingsHistorySuffix(suffix){
  * chaque lancement avec --suffix) pour savoir quels fichiers existent —
  * évite d'avoir à taper un nom à la main, et permet de proposer
  * automatiquement "popo" si quelqu'un a lancé le script avec --suffix popo. */
+const HOLDINGS_PASSPHRASE_KEY = "lgl_holdings_passphrase"; // localStorage, jamais envoyé nulle part — sert uniquement à déchiffrer localement
+
+function base64ToBytes(b64){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/** Dérive la même clé AES-256 que côté Python (PBKDF2-SHA256), via l'API
+ * Web Crypto native du navigateur — aucune librairie externe nécessaire. */
+async function deriveHoldingsKey(passphrase, saltB64, iterations){
+  const enc = new TextEncoder();
+  const salt = base64ToBytes(saltB64);
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+}
+
+/** Déchiffre un fichier holdings-history chiffré par
+ * fetch_holdings_history.py --encrypt. Un mauvais mot de passe fait
+ * échouer la vérification d'intégrité AES-GCM (exception levée) — sert à
+ * distinguer "mauvais mot de passe" de "fichier corrompu". */
+async function decryptHoldingsPayload(encryptedObj, passphrase){
+  const key = await deriveHoldingsKey(passphrase, encryptedObj.salt, encryptedObj.iterations);
+  const iv = base64ToBytes(encryptedObj.iv);
+  const ciphertext = base64ToBytes(encryptedObj.ciphertext);
+  const plaintextBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  return JSON.parse(new TextDecoder().decode(plaintextBuf));
+}
+
+/** Demande le mot de passe si besoin (mémorisé ensuite dans CE navigateur
+ * uniquement, jamais dans le dépôt), avec 3 essais avant d'abandonner. */
+async function decryptHoldingsWithPrompt(encryptedObj){
+  let passphrase = localStorage.getItem(HOLDINGS_PASSPHRASE_KEY);
+  for(let attempt=0; attempt<3; attempt++){
+    if(!passphrase){
+      passphrase = prompt("Mot de passe pour déchiffrer l'historique de prix :");
+      if(!passphrase) return null; // annulé par l'utilisateur
+    }
+    try{
+      const decrypted = await decryptHoldingsPayload(encryptedObj, passphrase);
+      localStorage.setItem(HOLDINGS_PASSPHRASE_KEY, passphrase); // mémorisé seulement si ça a fonctionné
+      return decrypted;
+    }catch(e){
+      toast("Mot de passe incorrect.");
+      passphrase = null; // force une nouvelle saisie au prochain essai
+    }
+  }
+  return null;
+}
+
 async function loadHoldingsHistorySuffixes(){
   try{
     const url = "./holdings-history-index.json?t=" + Date.now();
@@ -91,6 +148,10 @@ async function loadHoldingsHistory(){
     const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
     if(!res.ok) return null;
     const json = await res.json();
+    if(json && json.encrypted){
+      const decrypted = await decryptHoldingsWithPrompt(json);
+      return decrypted && decrypted.prices ? decrypted.prices : null;
+    }
     return json && json.prices ? json.prices : null;
   }catch(e){
     return null;
@@ -1204,7 +1265,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.15.0";
+  if(versionEl) versionEl.textContent = "v7.16.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();

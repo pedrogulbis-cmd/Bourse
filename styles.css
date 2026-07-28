@@ -362,6 +362,10 @@ td.addcol{text-align:center;width:36px;}
 .modal-box h3{font-family:'Fraunces',serif;font-size:1.15rem;margin:0 0 4px;}
 .modal-box .modal-sub{font-size:0.78rem;color:var(--ink-faint);margin-bottom:18px;}
 .modal-field{margin-bottom:14px;}
+.closeout-summary{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:10px 14px;font-size:0.82rem;}
+.closeout-summary .row{display:flex;justify-content:space-between;padding:4px 0;color:var(--ink-dim);}
+.closeout-summary .row.pos span:last-child{color:var(--verdigris-bright);font-weight:600;}
+.closeout-summary .row.neg span:last-child{color:var(--oxide-bright);font-weight:600;}
 .modal-field label{display:block;font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);margin-bottom:5px;}
 .modal-field input{
   width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);

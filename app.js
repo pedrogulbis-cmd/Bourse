@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.16.0";
+const APP_VERSION = "v7.17.0";
 
 let state = {
   strategy: "trending_value",

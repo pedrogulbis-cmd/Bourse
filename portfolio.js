@@ -199,6 +199,37 @@ function fxRateAvailable(currency, fxRates){
 
 let chartInstance = null;
 
+/**
+ * Calcule les lignes de portefeuille (prix natif + converti en euros) pour
+ * une liste de positions donnée — factorisé pour être réutilisé à la fois
+ * par l'affichage normal ET par le calcul de clôture (même logique de
+ * conversion de devise, pas de duplication).
+ */
+function computeHoldingsRows(holdings, snap, fxRates){
+  const missingFx = new Set();
+  const bySymbol = {};
+  snap.records.forEach(r=> bySymbol[r.symbol]=r );
+
+  const rows = holdings.map(h=>{
+    const live = bySymbol[h.symbol];
+    const currentPrice = live ? live.price : null;
+    const currency = resolveListedCurrency(live || h);
+    if(currency !== "EUR" && (!fxRates || (currency !== "GBX" && fxRates[currency] == null) || (currency === "GBX" && fxRates["GBP"] == null))) missingFx.add(currency);
+
+    const purchaseCcy = h.priceCurrency || currency;
+    const costBasisNative = h.quantity * h.purchasePrice;
+    const currentValueNative = currentPrice!=null ? h.quantity * currentPrice : null;
+    const costBasis = purchaseCcy === "EUR" ? costBasisNative : toEUR(costBasisNative, currency, fxRates);
+    const currentValue = currentValueNative!=null ? toEUR(currentValueNative, currency, fxRates) : null;
+    const gain = currentValue!=null ? currentValue - costBasis : null;
+    const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
+    const fxOk = fxRateAvailable(currency, fxRates) && fxRateAvailable(purchaseCcy, fxRates);
+    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk };
+  });
+
+  return { rows, missingFx };
+}
+
 async function renderPortfolio(){
   const holdings = pfGetHoldings();
   let snap;
@@ -209,33 +240,7 @@ async function renderPortfolio(){
     return;
   }
   const fxRates = await loadFxRates();
-  const missingFx = new Set();
-  const bySymbol = {};
-  snap.records.forEach(r=> bySymbol[r.symbol]=r );
-
-  // ---- Calculs par position (en devise native + converti en euros) ----
-  const rows = holdings.map(h=>{
-    const live = bySymbol[h.symbol];
-    const currentPrice = live ? live.price : null;
-    // Devise réelle du prix ACTUEL : priorité au champ listedCurrency du
-    // snapshot (gère GBX correctement), repli sur la déduction par pays si absent.
-    const currency = resolveListedCurrency(live || h);
-    if(currency !== "EUR" && (!fxRates || (currency !== "GBX" && fxRates[currency] == null) || (currency === "GBX" && fxRates["GBP"] == null))) missingFx.add(currency);
-
-    // Le prix d'achat a pu être saisi soit dans la devise native du titre,
-    // soit directement en euros (courtier qui convertit à l'achat) — voir
-    // h.priceCurrency, choisi au moment de l'ajout. On ne convertit QUE si
-    // besoin.
-    const purchaseCcy = h.priceCurrency || currency; // repli : ancien holding sans ce champ -> devise native, comme avant
-    const costBasisNative = h.quantity * h.purchasePrice;
-    const currentValueNative = currentPrice!=null ? h.quantity * currentPrice : null;
-    const costBasis = purchaseCcy === "EUR" ? costBasisNative : toEUR(costBasisNative, currency, fxRates);
-    const currentValue = currentValueNative!=null ? toEUR(currentValueNative, currency, fxRates) : null;
-    const gain = currentValue!=null ? currentValue - costBasis : null;
-    const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
-    const fxOk = fxRateAvailable(currency, fxRates) && fxRateAvailable(purchaseCcy, fxRates);
-    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk };
-  });
+  const { rows, missingFx } = computeHoldingsRows(holdings, snap, fxRates);
 
   if(missingFx.size){
     toast(`Taux de change manquant pour : ${[...missingFx].join(', ')} — fx-rates.json absent ou incomplet. Ces positions sont additionnées sans conversion (totaux inexacts). Lance fetch_fx_rates.py.`);
@@ -322,6 +327,98 @@ function renderCash(cashRows){
     btn.addEventListener("click", ()=> openCashModal(btn.dataset.cashEdit));
   });
   document.getElementById("addCashBtn").addEventListener("click", ()=> openCashModal(null));
+}
+
+/**
+ * "Clôturer position" — enregistre une ligne dans l'Historique (méthode
+ * utilisée, date, bénéfice réalisé) puis vide TOUTES les positions du
+ * portefeuille actif. Ne touche ni au cash, ni à l'historique de valeur
+ * jour par jour, ni aux clôtures déjà enregistrées.
+ */
+async function openCloseoutModal(){
+  const portfolioId = pfGetActivePortfolioId();
+  const holdings = pfGetHoldings(portfolioId);
+  if(holdings.length === 0){
+    toast("Aucune position à clôturer dans ce portefeuille.");
+    return;
+  }
+
+  let snap, fxRates;
+  try{
+    snap = await loadSnapshot();
+    fxRates = await loadFxRates();
+  }catch(e){
+    toast("Impossible de charger les prix actuels : " + e.message);
+    return;
+  }
+  const { rows } = computeHoldingsRows(holdings, snap, fxRates);
+  const totalCostBasis = rows.reduce((s,r)=>s+r.costBasis, 0);
+  const totalValue = rows.reduce((s,r)=>s + (r.currentValue!=null ? r.currentValue : r.costBasis), 0);
+  const realizedGain = totalValue - totalCostBasis;
+  const realizedGainPct = totalCostBasis>0 ? (realizedGain/totalCostBasis*100) : null;
+
+  const today = new Date().toISOString().slice(0,10);
+  const strategyOptions = STRATEGY_ORDER.map(id => `<option value="${id}">${STRATEGIES[id].name}</option>`).join('');
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Clôturer ce portefeuille</h3>
+      <div class="modal-sub">Enregistre une ligne dans l'Historique, puis vide les ${holdings.length} position(s) actuelles. Le cash n'est pas touché.</div>
+      <div class="modal-field">
+        <label>Méthode utilisée</label>
+        <select id="closeoutStrategy" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px 10px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.88rem;">
+          ${strategyOptions}
+          <option value="autre">Autre / choix manuel</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Date de clôture</label>
+        <input type="date" id="closeoutDate" value="${today}" max="${today}">
+      </div>
+      <div class="modal-field">
+        <div class="closeout-summary">
+          <div class="row"><span>Positions concernées</span><span>${holdings.length}</span></div>
+          <div class="row"><span>Investi</span><span>${fmtEUR(totalCostBasis)}</span></div>
+          <div class="row"><span>Valeur actuelle</span><span>${fmtEUR(totalValue)}</span></div>
+          <div class="row ${realizedGain>=0?'pos':'neg'}"><span>Plus/moins-value réalisée</span><span>${fmtEUR(realizedGain)} (${fmtPctSigned(realizedGainPct)})</span></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="closeoutCancel">Annuler</button>
+        <button class="btn-confirm" id="closeoutConfirm">Clôturer</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector("#closeoutCancel").addEventListener("click", close);
+  overlay.querySelector("#closeoutConfirm").addEventListener("click", ()=>{
+    if(!confirm(`Confirmer la clôture ? Les ${holdings.length} position(s) actuelles seront retirées du portefeuille (le cash reste intact).`)) return;
+
+    const strategyId = overlay.querySelector("#closeoutStrategy").value;
+    const strategyName = strategyId === "autre" ? "Autre / choix manuel" : STRATEGIES[strategyId].name;
+    const closedDate = overlay.querySelector("#closeoutDate").value || today;
+
+    pfAddClosure({
+      strategy: strategyId,
+      strategyName,
+      closedDate,
+      positionCount: holdings.length,
+      totalCostBasis,
+      totalValue,
+      realizedGain,
+      realizedGainPct,
+    }, portfolioId);
+    pfClearHoldings(portfolioId);
+
+    toast(`Clôture enregistrée (${strategyName}, ${fmtEUR(realizedGain)}) — positions vidées.`);
+    close();
+    renderPortfolio();
+  });
 }
 
 function openCashModal(cashId){
@@ -1265,7 +1362,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.16.0";
+  if(versionEl) versionEl.textContent = "v7.17.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();
@@ -1290,6 +1387,8 @@ function init(){
       renderChart();
     });
   });
+
+  document.getElementById("closeoutBtn").addEventListener("click", openCloseoutModal);
 
   document.getElementById("exportBtn").addEventListener("click", ()=>{
     pfDownloadExport();

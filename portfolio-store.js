@@ -36,7 +36,7 @@ function pfMigrateFromV1(){
   }catch(e){}
   const id = pfNewId();
   const store = {
-    portfolios: [{ id, name: "Portefeuille principal", holdings, history, cash: [] }],
+    portfolios: [{ id, name: "Portefeuille principal", holdings, history, cash: [], closures: [] }],
     activeId: id,
   };
   pfSaveStore(store);
@@ -85,7 +85,7 @@ function pfSetActivePortfolio(id){
 function pfCreatePortfolio(name){
   const store = pfLoadStore();
   const id = pfNewId();
-  store.portfolios.push({ id, name: name || "Nouveau portefeuille", holdings: [], history: [], cash: [] });
+  store.portfolios.push({ id, name: name || "Nouveau portefeuille", holdings: [], history: [], cash: [], closures: [] });
   store.activeId = id;
   pfSaveStore(store);
   return id;
@@ -199,6 +199,46 @@ function pfUpdateCash(id, updates, portfolioId){
   cashList[idx] = { ...cashList[idx], ...updates };
   pfSaveCash(cashList, portfolioId);
   return {ok:true, message:"Cash mis à jour."};
+}
+
+// ---------------------------------------------------------------
+// Clôtures — trace d'une "session" de positions closes en une fois (ex.
+// "j'ai vidé mon portefeuille Trending Value"), pour suivre la
+// performance réalisée au fil du temps, par méthode utilisée. Distinct de
+// l'historique de valeur (pfGetHistory) qui suit la valeur jour par jour.
+// ---------------------------------------------------------------
+function pfGetClosures(portfolioId){
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  return p ? (p.closures || []) : [];
+}
+
+function pfAddClosure(closure, portfolioId){
+  const closures = pfGetClosures(portfolioId);
+  closures.push({
+    id: "cl_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
+    createdAt: Date.now(),
+    ...closure,
+  });
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  if(p){ p.closures = closures; pfSaveStore(store); }
+  return closures;
+}
+
+function pfRemoveClosure(id, portfolioId){
+  const closures = pfGetClosures(portfolioId).filter(c=>c.id!==id);
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  if(p){ p.closures = closures; pfSaveStore(store); }
+  return closures;
+}
+
+/** Vide toutes les positions d'un portefeuille (utilisé par "Clôturer
+ * position" après avoir enregistré la clôture) — ne touche ni au cash, ni
+ * à l'historique de valeur, ni aux clôtures déjà enregistrées. */
+function pfClearHoldings(portfolioId){
+  pfSaveHoldings([], portfolioId);
 }
 
 /** Un titre est-il détenu dans CE portefeuille (actif par défaut) ? Ne
@@ -322,12 +362,16 @@ function pfImportData(jsonText, mode){
         if(!existing.cash) existing.cash = [];
         const existingCashIds = new Set(existing.cash.map(c=>c.id));
         (incoming.cash||[]).forEach(c=>{ if(!existingCashIds.has(c.id)) existing.cash.push(c); });
+
+        if(!existing.closures) existing.closures = [];
+        const existingClosureIds = new Set(existing.closures.map(c=>c.id));
+        (incoming.closures||[]).forEach(c=>{ if(!existingClosureIds.has(c.id)) existing.closures.push(c); });
       } else {
-        store.portfolios.push({ id: pfNewId(), name: incoming.name || "Portefeuille importé", holdings: incoming.holdings||[], history: incoming.history||[], cash: incoming.cash||[] });
+        store.portfolios.push({ id: pfNewId(), name: incoming.name || "Portefeuille importé", holdings: incoming.holdings||[], history: incoming.history||[], cash: incoming.cash||[], closures: incoming.closures||[] });
       }
     });
   } else {
-    store.portfolios = incomingPortfolios.map(p=>({ id: pfNewId(), name: p.name || "Portefeuille importé", holdings: p.holdings||[], history: p.history||[], cash: p.cash||[] }));
+    store.portfolios = incomingPortfolios.map(p=>({ id: pfNewId(), name: p.name || "Portefeuille importé", holdings: p.holdings||[], history: p.history||[], cash: p.cash||[], closures: p.closures||[] }));
     store.activeId = store.portfolios[0].id;
   }
 

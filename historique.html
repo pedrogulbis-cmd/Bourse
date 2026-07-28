@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="theme.js?v=7.17.0"></script>
+<title>Le Grand Livre — Historique</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div>
+        <div class="mark">Le Grand Livre <em>Historique</em> <span id="appVersion" style="font-size:0.55em; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; vertical-align:middle;">…</span></div>
+        <div class="sub">Performance réalisée au fil du temps, par méthode utilisée</div>
+      </div>
+    </div>
+    <div class="source-tag">
+      Chaque ligne correspond à une clôture de positions ("Clôturer position" sur la page Portefeuille) —<br>
+      permet de comparer tes stratégies dans la durée, sur de vrais résultats réalisés.
+    </div>
+    <button id="themeToggleBtn" class="theme-toggle-btn">☀ Clair</button>
+  </header>
+
+  <nav class="page-nav">
+    <a href="index.html" class="page-nav-item">Screener</a>
+    <a href="search.html" class="page-nav-item">Recherche</a>
+    <a href="portfolio.html" class="page-nav-item">Portefeuille</a>
+    <a href="historique.html" class="page-nav-item active">→ Historique</a>
+  </nav>
+
+  <div class="pf-switcher" id="pfSwitcherReadonly"></div>
+
+  <div class="section-title"><span class="idx">01</span> Récapitulatif</div>
+  <div id="recapWrap" class="pf-summary"></div>
+
+  <div class="section-title"><span class="idx">02</span> Performance par méthode</div>
+  <div id="byStrategyWrap"></div>
+
+  <div class="section-title"><span class="idx">03</span> Toutes les clôtures</div>
+  <div id="closuresWrap"></div>
+
+  <footer>
+    <div class="disclaimer">Les analyses et calculs affichés ne constituent pas des conseils en investissement. Vous êtes seul responsable de vos décisions.</div>
+  </footer>
+
+</div>
+
+<script src="data.js?v=7.17.0"></script>
+<script src="portfolio-store.js?v=7.17.0"></script>
+<script src="historique.js?v=7.17.0"></script>
+</body>
+</html>

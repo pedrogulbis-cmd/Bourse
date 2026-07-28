@@ -412,6 +412,19 @@ async function openCloseoutModal(){
       totalValue,
       realizedGain,
       realizedGainPct,
+      positions: rows.map(r => ({
+        symbol: r.symbol,
+        name: r.name,
+        quantity: r.quantity,
+        purchasePrice: r.purchasePrice,
+        purchaseCcy: r.purchaseCcy,
+        currentPrice: r.currentPrice,
+        currency: r.currency,
+        costBasis: r.costBasis,
+        currentValue: r.currentValue,
+        gain: r.gain,
+        gainPct: r.gainPct,
+      })),
     }, portfolioId);
     pfClearHoldings(portfolioId);
 
@@ -1362,7 +1375,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.17.0";
+  if(versionEl) versionEl.textContent = "v7.18.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.17.0"></script>
+<script src="theme.js?v=7.18.0"></script>
 <title>Le Grand Livre — Historique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,10 +35,24 @@
     <a href="historique.html" class="page-nav-item active">→ Historique</a>
   </nav>
 
-  <div class="pf-switcher" id="pfSwitcherReadonly"></div>
+  <div class="filter-row">
+    <div class="field">
+      <label>Portefeuille</label>
+      <select id="filterPortfolio">
+        <option value="">Tous</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Méthode</label>
+      <select id="filterStrategy">
+        <option value="">Toutes</option>
+      </select>
+    </div>
+  </div>
 
-  <div class="section-title"><span class="idx">01</span> Récapitulatif</div>
+  <div class="section-title"><span class="idx">01</span> Récapitulatif <span class="recap-scope" id="recapScope"></span></div>
   <div id="recapWrap" class="pf-summary"></div>
+  <div id="recapGlobalWrap" class="pf-summary pf-summary-global"></div>
 
   <div class="section-title"><span class="idx">02</span> Performance par méthode</div>
   <div id="byStrategyWrap"></div>
@@ -52,8 +66,8 @@
 
 </div>
 
-<script src="data.js?v=7.17.0"></script>
-<script src="portfolio-store.js?v=7.17.0"></script>
-<script src="historique.js?v=7.17.0"></script>
+<script src="data.js?v=7.18.0"></script>
+<script src="portfolio-store.js?v=7.18.0"></script>
+<script src="historique.js?v=7.18.0"></script>
 </body>
 </html>

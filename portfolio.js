@@ -923,7 +923,7 @@ async function renderChart(){
       return p ? (base>0 ? p.totalValue/base*100 : 100) : null;
     });
     datasets.push({
-      label: "Portefeuille (base 100, historique réel)",
+      label: "Portefeuille actuel (base 100, valorisé rétroactivement)",
       data: pfIndexed,
       borderColor: "#C9A24B",
       backgroundColor: "rgba(201,162,75,0.08)",
@@ -1391,7 +1391,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.19.0";
+  if(versionEl) versionEl.textContent = "v7.20.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();

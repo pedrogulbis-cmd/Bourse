@@ -452,6 +452,12 @@ tr.closure-row:hover{background:rgba(201,162,75,0.06);}
 .chart-wrap{background:var(--panel);border:1px solid var(--hairline);border-radius:5px;padding:16px;margin-bottom:28px;height:340px;position:relative;}
 .chart-wrap canvas{width:100%!important;height:100%!important;}
 .chart-empty{text-align:center;padding:40px 20px;color:var(--ink-faint);font-size:0.85rem;}
+.chart-note{
+  font-size:0.76rem;color:var(--ink-faint);line-height:1.5;
+  margin:-8px 0 24px;padding:10px 14px;
+  border-left:2px solid var(--hairline-bright);background:rgba(140,130,115,0.04);
+}
+.chart-note strong{color:var(--ink-dim);font-weight:600;}
 
 table.holdings{width:100%;border-collapse:collapse;font-size:0.83rem;}
 table.holdings thead th{

@@ -777,7 +777,8 @@ async function renderChart(){
   const canvas = document.getElementById("pfChart");
   const emptyMsg = document.getElementById("chartEmptyMsg");
   const startInput = document.getElementById("chartStartDate");
-  const benchmarkKeys = [...document.querySelectorAll('#benchmarkChips input:checked')].map(el=>el.value);
+  const benchmarkKeys = [...document.querySelectorAll('#benchmarkChips input:checked')].filter(el=>el.id !== "showBaseline").map(el=>el.value);
+  const showBaseline = document.getElementById("showBaseline").checked;
 
   const idxHist = benchmarkKeys.length ? await loadIndexHistory() : null;
   const holdingsPrices = holdings.length ? await loadHoldingsHistory() : null;
@@ -822,27 +823,25 @@ async function renderChart(){
     if(richest){
       const findClosest = (arr, date) => { let best=null; for(const p of arr){ if(p.date>date) break; best=p; } return best; };
       const candidateDates = richest.map(p=>p.date).filter(d=>d >= startDate);
+      // IMPORTANT — on valorise le panier ACTUEL (positions et quantités
+      // d'aujourd'hui) à chaque date passée, SANS tenir compte de la date
+      // d'achat réelle de chaque ligne. C'est volontaire : une courbe base
+      // 100 doit montrer la PERFORMANCE, pas les apports de capital. Filtrer
+      // par purchaseDate ferait "sauter" la courbe d'une marche à chaque
+      // nouvel achat (de l'argent ajouté, pas un gain), ce qui écrasait
+      // visuellement les indices de comparaison et rendait le graphique
+      // trompeur sur 3-5 ans.
       const computed = candidateDates.map(date=>{
-        let total = 0, anyHeld = false;
+        let total = 0, anyPriced = false;
         for(const h of holdings){
-          if(h.purchaseDate > date) continue; // pas encore acheté à cette date
-          anyHeld = true;
           const s = seriesBySymbol[h.symbol];
           const pt = s ? findClosest(s, date) : null;
-          let priceEUR;
+          if(!pt) continue; // pas encore de cotation à cette date (introduction en bourse plus récente, etc.)
+          anyPriced = true;
           const ccy = resolveListedCurrency(liveBySymbol[h.symbol] || h);
-          if(pt){
-            // prix historique réel (holdings-history.json) — même instrument
-            // que le prix actuel, donc même devise de cotation.
-            priceEUR = toEUR(pt.close, ccy, fxRates);
-          } else {
-            // repli sur le prix d'achat — respecte la devise choisie à l'ajout
-            const purchaseCcy = h.priceCurrency || ccy;
-            priceEUR = purchaseCcy === "EUR" ? h.purchasePrice : toEUR(h.purchasePrice, ccy, fxRates);
-          }
-          total += h.quantity * priceEUR;
+          total += h.quantity * toEUR(pt.close, ccy, fxRates);
         }
-        return anyHeld ? { date, totalValue: total } : null;
+        return anyPriced ? { date, totalValue: total } : null;
       }).filter(Boolean);
       if(computed.length >= 2) retroSeries = computed;
     }
@@ -897,6 +896,23 @@ async function renderChart(){
   emptyMsg.style.display = "none";
 
   const datasets = [];
+
+  // Ligne horizontale au point de départ (base 100) — repère visuel simple :
+  // au-dessus = gain depuis le début de la période, en-dessous = perte.
+  // Ajoutée en premier pour être dessinée DERRIÈRE les autres courbes.
+  if(showBaseline){
+    datasets.push({
+      label: "Départ (100)",
+      data: labels.map(()=>100),
+      borderColor: "rgba(140,130,115,0.55)",
+      borderWidth: 1,
+      borderDash: [2,3],
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      fill: false,
+      tension: 0,
+    });
+  }
 
   if(hasRetroLine){
     const sorted = [...retroSeries].sort((a,b)=>a.date.localeCompare(b.date));
@@ -1375,7 +1391,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.18.0";
+  if(versionEl) versionEl.textContent = "v7.19.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();

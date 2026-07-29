@@ -1391,7 +1391,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.20.0";
+  if(versionEl) versionEl.textContent = "v7.21.0";
   renderSwitcher();
   renderPortfolio();
   initHoldingsSuffixSelector();
@@ -1403,6 +1403,26 @@ function init(){
     btn.addEventListener("click", ()=>{
       const today = new Date();
       let start;
+      if(btn.dataset.range === "purchase"){
+        // Date d'achat la plus fréquente parmi les positions actuelles —
+        // pertinent pour une stratégie type Trending Value où tout le
+        // panier est acheté le même jour : la courbe correspond alors
+        // exactement à la performance réelle depuis la constitution.
+        const counts = {};
+        pfGetHoldings().forEach(h=>{ if(h.purchaseDate) counts[h.purchaseDate] = (counts[h.purchaseDate]||0)+1; });
+        const dates = Object.keys(counts);
+        if(dates.length === 0){
+          toast("Aucune position avec une date d'achat — ajoute des positions d'abord.");
+          return;
+        }
+        // à égalité de fréquence, on prend la plus ancienne (couvre toute la période)
+        dates.sort((a,b)=> (counts[b]-counts[a]) || a.localeCompare(b));
+        document.getElementById("chartStartDate").value = dates[0];
+        document.querySelectorAll('.quick-range-btn').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        renderChart();
+        return;
+      }
       switch(btn.dataset.range){
         case "ytd": start = new Date(today.getFullYear(), 0, 1); break;
         case "1y": start = new Date(today); start.setFullYear(start.getFullYear()-1); break;

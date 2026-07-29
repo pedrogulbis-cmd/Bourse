@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.20.0"></script>
+<script src="theme.js?v=7.21.0"></script>
 <title>Le Grand Livre — Portefeuille</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,6 +77,7 @@
       <label>Depuis le</label>
       <input type="date" id="chartStartDate">
       <div class="quick-range-row">
+        <button class="quick-range-btn" data-range="purchase" title="Part de la date d'achat la plus fréquente parmi tes positions">Depuis achat</button>
         <button class="quick-range-btn" data-range="ytd">Début d'année</button>
         <button class="quick-range-btn" data-range="1y">1 an</button>
         <button class="quick-range-btn" data-range="3y">3 ans</button>
@@ -87,11 +88,6 @@
   <div class="chart-wrap">
     <canvas id="pfChart"></canvas>
     <div id="chartEmptyMsg" class="chart-empty" style="display:none"></div>
-  </div>
-  <div class="chart-note">
-    La courbe montre ce qu'aurait valu <strong>ton panier actuel</strong> sur la période choisie — pas ton historique d'achats réel.
-    Chaque vue repart de 100 à sa date de départ : tu peux donc être au-dessus des indices sur 1 an et en-dessous sur 5 ans,
-    selon que le point de départ tombe sur un creux ou un sommet.
   </div>
 
   <!-- HOLDINGS -->
@@ -107,10 +103,10 @@
 
 </div>
 
-<script src="data.js?v=7.20.0"></script>
-<script src="portfolio-store.js?v=7.20.0"></script>
+<script src="data.js?v=7.21.0"></script>
+<script src="portfolio-store.js?v=7.21.0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-<script src="portfolio.js?v=7.20.0"></script>
+<script src="portfolio.js?v=7.21.0"></script>
 </body>
 </html>

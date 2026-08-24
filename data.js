@@ -129,6 +129,7 @@ const STRATEGIES = {
 
   trending_value: {
     id: "trending_value",
+    exitRule: { type:"months", months:12, label:"Rotation annuelle : vendre et reconstituer le panier au bout de 12 mois", source:"O'Shaughnessy — les backtests du livre reposent sur un rebalancement annuel" },
     name: "Trending Value",
     short: "Valeur profonde + momentum 6 mois",
     stampReturn: "21,2 %/an",
@@ -156,6 +157,7 @@ const STRATEGIES = {
 
   deep_value: {
     id: "deep_value",
+    exitRule: { type:"months", months:12, label:"Rotation annuelle : vendre et reconstituer le panier au bout de 12 mois", source:"O'Shaughnessy — les backtests du livre reposent sur un rebalancement annuel" },
     name: "Value Composite Two",
     short: "Valeur profonde pure",
     stampReturn: "17,3 %/an",
@@ -180,6 +182,7 @@ const STRATEGIES = {
 
   cheap_on_mend: {
     id: "cheap_on_mend",
+    exitRule: { type:"months", months:12, label:"Rotation annuelle : vendre et reconstituer le panier au bout de 12 mois", source:"O'Shaughnessy — les backtests du livre reposent sur un rebalancement annuel" },
     name: "Cheap Stocks on the Mend",
     short: "Valeur + momentum médian (croissance/valeur)",
     stampReturn: "19,8 %/an",
@@ -208,6 +211,7 @@ const STRATEGIES = {
 
   all_stocks_growth: {
     id: "all_stocks_growth",
+    exitRule: { type:"months", months:12, label:"Rotation annuelle : vendre et reconstituer le panier au bout de 12 mois", source:"O'Shaughnessy — les backtests du livre reposent sur un rebalancement annuel" },
     name: "All Stocks Growth",
     short: "Croissance + momentum, forte corrélation croissance",
     stampReturn: "20,5 %/an",
@@ -237,6 +241,7 @@ const STRATEGIES = {
 
   shareholder_yield: {
     id: "shareholder_yield",
+    exitRule: { type:"months", months:12, label:"Rotation annuelle : vendre et reconstituer le panier au bout de 12 mois", source:"O'Shaughnessy — les backtests du livre reposent sur un rebalancement annuel" },
     name: "Shareholder Yield",
     short: "Dividendes + rachats d'actions",
     stampReturn: "14,9 %/an",
@@ -261,6 +266,7 @@ const STRATEGIES = {
 
   market_leaders: {
     id: "market_leaders",
+    exitRule: { type:"months", months:12, label:"Rotation annuelle : vendre et reconstituer le panier au bout de 12 mois", source:"O'Shaughnessy — les backtests du livre reposent sur un rebalancement annuel" },
     name: "Market Leaders + Yield + Momentum",
     short: "Grandes capitalisations, rendement actionnarial, momentum",
     stampReturn: "≈17,9 %/an",
@@ -290,6 +296,7 @@ const STRATEGIES = {
 
   higgons_v2: {
     id: "higgons_v2",
+    exitRule: { type:"metric", metric:"pe", trimAt:17, sellAt:20, label:"Alléger quand le PER dépasse 17, vendre au-delà de 20", source:"W. Higgons : n'achète pas au-dessus d'un PER de 15, allège à partir de 17, vend au-delà de 20 (source : Les Daubasses)" },
     name: "HiggonsV2",
     short: "Higgons affiné : marge stricte + filtre anti-sous-performance",
     stampReturn: null,
@@ -337,6 +344,7 @@ const STRATEGIES = {
 
   world_balanced: {
     id: "world_balanced",
+    exitRule: { type:"hold", label:"Conservation longue — pas de date de sortie prévue (approche indicielle)", source:"Construction indicielle : l'intérêt vient de la durée de détention, pas de la rotation" },
     name: "World équilibré (indiciel sans biais)",
     short: "Exposition mondiale large, avec plafonds pays et secteur",
     stampReturn: null,
@@ -363,6 +371,7 @@ const STRATEGIES = {
 
   europe_balanced: {
     id: "europe_balanced",
+    exitRule: { type:"hold", label:"Conservation longue — pas de date de sortie prévue (approche indicielle)", source:"Construction indicielle : l'intérêt vient de la durée de détention, pas de la rotation" },
     name: "Europe équilibré (indiciel sans biais)",
     short: "Exposition européenne large, avec plafonds pays et secteur",
     stampReturn: null,

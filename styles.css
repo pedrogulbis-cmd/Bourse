@@ -525,3 +525,14 @@ tr.fx-warn:hover{background:rgba(200,110,50,0.12);}
 .plan-bar.plan-soon{border-left-color:var(--brass-bright);background:rgba(201,162,75,0.06);}
 .plan-bar.plan-due{border-left-color:var(--oxide-bright);background:rgba(200,110,50,0.08);}
 .plan-bar.plan-due strong{color:var(--oxide-bright);}
+
+.plan-bar .plan-origin{
+  font-size:0.68rem;padding:1px 6px;border-radius:3px;margin-left:6px;
+  background:rgba(140,130,115,0.15);color:var(--ink-faint);cursor:help;
+}
+.plan-bar .plan-origin.auto{background:rgba(201,162,75,0.15);color:var(--brass-bright);}
+.plan-bar .plan-hits{flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--hairline);font-size:0.8rem;}
+.plan-default-box{background:var(--paper);border:1px solid var(--hairline);border-radius:4px;padding:10px 13px;}
+.plan-default-label{font-size:0.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:5px;}
+.plan-default-text{font-size:0.84rem;color:var(--ink);}
+.plan-default-source{font-size:0.72rem;color:var(--ink-faint);margin-top:6px;font-style:italic;}

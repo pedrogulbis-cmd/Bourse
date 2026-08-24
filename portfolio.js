@@ -262,6 +262,11 @@ async function renderPortfolio(){
   const cashRows = cashList.map(c=>({ ...c, valueEUR: toEUR(c.amount, c.currency, fxRates) }));
   const totalCash = cashRows.reduce((s,c)=>s+(c.valueEUR||0), 0);
 
+  // Expose les lignes calculées pour que le bandeau de plan puisse vérifier
+  // les règles portant sur un multiple (ex. PER ≥ 20 chez Higgons).
+  window.__lastRows = rows;
+  renderPlan();
+
   renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome, totalCash);
   renderHoldingsTable(rows);
   renderCash(cashRows);
@@ -335,83 +340,161 @@ function renderCash(cashRows){
  * portefeuille actif. Ne touche ni au cash, ni à l'historique de valeur
  * jour par jour, ni aux clôtures déjà enregistrées.
  */
-/** Bandeau du plan de sortie — rappelle la stratégie suivie et QUAND en
- * sortir, avec alerte visuelle quand l'échéance approche ou est dépassée. */
+/** Date d'achat la plus fréquente parmi les positions — sert de point de
+ * départ pour calculer une échéance de rotation (ex. +12 mois). */
+function dominantPurchaseDate(portfolioId){
+  const counts = {};
+  pfGetHoldings(portfolioId).forEach(h=>{ if(h.purchaseDate) counts[h.purchaseDate] = (counts[h.purchaseDate]||0)+1; });
+  const dates = Object.keys(counts);
+  if(dates.length === 0) return null;
+  dates.sort((a,b)=> (counts[b]-counts[a]) || a.localeCompare(b));
+  return dates[0];
+}
+
+function addMonths(dateStr, months){
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0,10);
+}
+
+/**
+ * Plan EFFECTIF d'un portefeuille : les réglages personnalisés s'il y en a,
+ * sinon la règle par défaut de la stratégie (voir exitRule dans data.js).
+ * L'idée est qu'on n'ait RIEN à saisir pour savoir quand vendre — la
+ * méthode choisie porte déjà sa propre règle, documentée et sourcée.
+ */
+function getEffectivePlan(portfolioId){
+  const saved = pfGetPlan(portfolioId);
+  if(!saved || !saved.strategy) return null;
+  const strat = STRATEGIES[saved.strategy];
+  const defaults = strat ? strat.exitRule : null;
+  const rule = saved.customRule || defaults;
+  if(!rule) return null;
+
+  const out = {
+    strategy: saved.strategy,
+    strategyName: saved.strategyName || (strat ? strat.name : saved.strategy),
+    rule,
+    isCustom: !!saved.customRule,
+    source: (saved.customRule ? null : (defaults ? defaults.source : null)),
+  };
+
+  if(rule.type === "months"){
+    const base = saved.startDate || dominantPurchaseDate(portfolioId);
+    out.startDate = base;
+    out.exitDate = base ? addMonths(base, rule.months) : null;
+  }
+  return out;
+}
+
+/** Bandeau du plan de sortie — affiche automatiquement QUAND vendre selon
+ * la méthode suivie, sans rien avoir à renseigner au-delà de la méthode. */
 function renderPlan(){
   const wrap = document.getElementById("planWrap");
   if(!wrap) return;
-  const plan = pfGetPlan();
+  const plan = getEffectivePlan();
 
   if(!plan){
     wrap.innerHTML = `<div class="plan-bar plan-empty">
-      <span>Aucun plan de sortie défini pour ce portefeuille.</span>
-      <button class="btn-io" id="editPlanBtn">Définir un plan</button>
+      <span>Choisis la méthode suivie par ce portefeuille pour savoir automatiquement quand vendre.</span>
+      <button class="btn-io" id="editPlanBtn">Choisir la méthode</button>
     </div>`;
   } else {
-    let statusHtml = "";
-    let barClass = "";
-    if(plan.exitType === "date" && plan.exitDate){
-      const today = new Date().toISOString().slice(0,10);
-      const daysLeft = Math.round((new Date(plan.exitDate) - new Date(today)) / 86400000);
-      if(daysLeft < 0){
-        barClass = "plan-due";
-        statusHtml = `<strong>Échéance dépassée depuis ${Math.abs(daysLeft)} jour(s)</strong> — il est temps de clôturer.`;
-      } else if(daysLeft <= 30){
-        barClass = "plan-soon";
-        statusHtml = `<strong>Sortie prévue dans ${daysLeft} jour(s)</strong> (${plan.exitDate}).`;
+    let statusHtml = "", barClass = "", extra = "";
+
+    if(plan.rule.type === "months"){
+      if(!plan.exitDate){
+        statusHtml = `Rotation à ${plan.rule.months} mois — <strong>ajoute des positions</strong> pour calculer l'échéance.`;
       } else {
-        statusHtml = `Sortie prévue le <strong>${plan.exitDate}</strong> (dans ${daysLeft} jours).`;
+        const today = new Date().toISOString().slice(0,10);
+        const daysLeft = Math.round((new Date(plan.exitDate) - new Date(today)) / 86400000);
+        if(daysLeft < 0){
+          barClass = "plan-due";
+          statusHtml = `<strong>À vendre : échéance dépassée depuis ${Math.abs(daysLeft)} jour(s)</strong> (rotation ${plan.rule.months} mois, prévue le ${plan.exitDate}).`;
+        } else if(daysLeft <= 30){
+          barClass = "plan-soon";
+          statusHtml = `<strong>Vendre dans ${daysLeft} jour(s)</strong> — le ${plan.exitDate} (rotation ${plan.rule.months} mois).`;
+        } else {
+          statusHtml = `Vendre le <strong>${plan.exitDate}</strong> — dans ${daysLeft} jours (rotation ${plan.rule.months} mois).`;
+        }
+      }
+    } else if(plan.rule.type === "metric" && plan.rule.metric === "pe"){
+      statusHtml = `Vendre quand le PER dépasse <strong>${plan.rule.sellAt}</strong>${plan.rule.trimAt?` (alléger dès ${plan.rule.trimAt})`:''}.`;
+      // Vérifie directement quelles positions atteignent le seuil — c'est
+      // tout l'intérêt d'une règle sur multiple plutôt que sur date.
+      const hits = (window.__lastRows || []).filter(r=> r.live && r.live.pe != null && r.live.pe >= plan.rule.sellAt);
+      const trims = (window.__lastRows || []).filter(r=> r.live && r.live.pe != null && plan.rule.trimAt && r.live.pe >= plan.rule.trimAt && r.live.pe < plan.rule.sellAt);
+      if(hits.length){
+        barClass = "plan-due";
+        extra = `<div class="plan-hits"><strong>À vendre (PER ≥ ${plan.rule.sellAt})</strong> : ${hits.map(h=>`${h.name} (${h.live.pe.toFixed(1)})`).join(', ')}</div>`;
+      } else if(trims.length){
+        barClass = "plan-soon";
+        extra = `<div class="plan-hits"><strong>À alléger (PER ≥ ${plan.rule.trimAt})</strong> : ${trims.map(h=>`${h.name} (${h.live.pe.toFixed(1)})`).join(', ')}</div>`;
       }
     } else {
-      statusHtml = `Objectif de sortie : <strong>${plan.objective || "—"}</strong>`;
+      statusHtml = plan.rule.label || "Conservation longue.";
     }
+
+    const originTag = plan.isCustom
+      ? `<span class="plan-origin" title="Règle que tu as personnalisée">personnalisé</span>`
+      : `<span class="plan-origin auto" title="${(plan.source||'').replace(/"/g,'&quot;')}">règle par défaut</span>`;
+
     wrap.innerHTML = `<div class="plan-bar ${barClass}">
-      <span class="plan-strategy">${plan.strategyName || plan.strategy || "Méthode non précisée"}</span>
-      <span class="plan-status">${statusHtml}</span>
+      <span class="plan-strategy">${plan.strategyName}</span>
+      <span class="plan-status">${statusHtml} ${originTag}</span>
       <button class="btn-io" id="editPlanBtn">Modifier</button>
+      ${extra}
     </div>`;
   }
   document.getElementById("editPlanBtn").addEventListener("click", openPlanModal);
 }
 
 function openPlanModal(){
-  const plan = pfGetPlan() || {};
+  const saved = pfGetPlan() || {};
   const strategyOptions = STRATEGY_ORDER.map(id =>
-    `<option value="${id}" ${plan.strategy===id?'selected':''}>${STRATEGIES[id].name}</option>`
+    `<option value="${id}" ${saved.strategy===id?'selected':''}>${STRATEGIES[id].name}</option>`
   ).join('');
-  const isObjective = plan.exitType === "objective";
 
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
     <div class="modal-box">
-      <h3>Plan de sortie</h3>
-      <div class="modal-sub">Quelle méthode suit ce portefeuille, et quand en sortir ?</div>
+      <h3>Méthode et règle de sortie</h3>
+      <div class="modal-sub">Choisis la méthode : sa règle de sortie s'applique automatiquement. Tu peux la personnaliser si tu veux t'en écarter.</div>
       <div class="modal-field">
         <label>Méthode suivie</label>
         <select id="planStrategy" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px 10px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.88rem;">
           ${strategyOptions}
-          <option value="autre" ${plan.strategy==='autre'?'selected':''}>Autre / choix manuel</option>
         </select>
       </div>
       <div class="modal-field">
-        <label>Type de sortie</label>
-        <label class="pea-check"><input type="radio" name="exitType" value="date" ${!isObjective?'checked':''}> Date fixe <span class="pea-hint">(ex. Trending Value : rotation à 12 mois)</span></label>
-        <label class="pea-check" style="margin-top:6px;"><input type="radio" name="exitType" value="objective" ${isObjective?'checked':''}> Objectif <span class="pea-hint">(ex. Higgons : pas de date, on sort quand la thèse se réalise)</span></label>
+        <div class="plan-default-box" id="planDefaultBox"></div>
       </div>
-      <div class="modal-field" id="exitDateField" style="display:${isObjective?'none':'block'};">
-        <label>Date de sortie prévue</label>
-        <input type="date" id="planExitDate" value="${plan.exitDate || ''}">
-        <div style="font-size:0.7rem;color:var(--ink-faint);margin-top:5px;">
-          Astuce : pour une rotation à 12 mois, prends la date d'achat de tes positions + 1 an.
+      <div class="modal-field">
+        <label class="pea-check"><input type="checkbox" id="planCustomize" ${saved.customRule?'checked':''}> Personnaliser la règle de sortie</label>
+      </div>
+      <div id="planCustomFields" style="display:${saved.customRule?'block':'none'};">
+        <div class="modal-field">
+          <label>Type de règle</label>
+          <select id="customType" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px 10px;border-radius:4px;font-size:0.85rem;">
+            <option value="months">Durée de détention (en mois)</option>
+            <option value="metric">Seuil de PER</option>
+            <option value="hold">Conservation longue (aucune sortie prévue)</option>
+          </select>
+        </div>
+        <div class="modal-field" id="customMonthsField">
+          <label>Vendre après (mois)</label>
+          <input type="number" id="customMonths" min="1" max="600" value="${saved.customRule && saved.customRule.months || 12}">
+        </div>
+        <div class="modal-field" id="customPeField" style="display:none;">
+          <label>Alléger à partir d'un PER de</label>
+          <input type="number" id="customTrimAt" min="1" step="0.5" value="${saved.customRule && saved.customRule.trimAt || 17}">
+          <label style="margin-top:8px;">Vendre au-delà d'un PER de</label>
+          <input type="number" id="customSellAt" min="1" step="0.5" value="${saved.customRule && saved.customRule.sellAt || 20}">
         </div>
       </div>
-      <div class="modal-field" id="objectiveField" style="display:${isObjective?'block':'none'};">
-        <label>Objectif de sortie</label>
-        <input type="text" id="planObjective" value="${plan.objective || ''}" placeholder="ex. P/E revenu à 15, ou thèse invalidée">
-      </div>
       <div class="modal-actions">
-        ${pfGetPlan() ? `<button class="btn-cancel" id="planDelete">Supprimer le plan</button>` : ''}
+        ${pfGetPlan() ? `<button class="btn-cancel" id="planDelete">Supprimer</button>` : ''}
         <button class="btn-cancel" id="planCancel">Annuler</button>
         <button class="btn-confirm" id="planConfirm">Enregistrer</button>
       </div>
@@ -419,41 +502,64 @@ function openPlanModal(){
   `;
   document.body.appendChild(overlay);
 
+  const stratSel = overlay.querySelector("#planStrategy");
+  const defaultBox = overlay.querySelector("#planDefaultBox");
+  const customChk = overlay.querySelector("#planCustomize");
+  const customFields = overlay.querySelector("#planCustomFields");
+  const typeSel = overlay.querySelector("#customType");
+
+  function refreshDefaultBox(){
+    const rule = (STRATEGIES[stratSel.value] || {}).exitRule;
+    defaultBox.innerHTML = rule
+      ? `<div class="plan-default-label">Règle par défaut de cette méthode</div>
+         <div class="plan-default-text">${rule.label}</div>
+         ${rule.source?`<div class="plan-default-source">${rule.source}</div>`:''}`
+      : `<div class="plan-default-text">Aucune règle par défaut pour cette méthode.</div>`;
+  }
+  function refreshCustomFields(){
+    const t = typeSel.value;
+    overlay.querySelector("#customMonthsField").style.display = t==="months" ? "block" : "none";
+    overlay.querySelector("#customPeField").style.display = t==="metric" ? "block" : "none";
+  }
+  if(saved.customRule) typeSel.value = saved.customRule.type;
+  refreshDefaultBox();
+  refreshCustomFields();
+
+  stratSel.addEventListener("change", refreshDefaultBox);
+  typeSel.addEventListener("change", refreshCustomFields);
+  customChk.addEventListener("change", ()=>{ customFields.style.display = customChk.checked ? "block" : "none"; });
+
   const close = ()=> overlay.remove();
   overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
   overlay.querySelector("#planCancel").addEventListener("click", close);
-  overlay.querySelectorAll('input[name="exitType"]').forEach(radio=>{
-    radio.addEventListener("change", ()=>{
-      const byDate = overlay.querySelector('input[name="exitType"]:checked').value === "date";
-      overlay.querySelector("#exitDateField").style.display = byDate ? "block" : "none";
-      overlay.querySelector("#objectiveField").style.display = byDate ? "none" : "block";
-    });
-  });
   const delBtn = overlay.querySelector("#planDelete");
-  if(delBtn){
-    delBtn.addEventListener("click", ()=>{
-      if(confirm("Supprimer le plan de sortie de ce portefeuille ?")){
-        pfClearPlan();
-        close();
-        renderPlan();
-        toast("Plan supprimé.");
-      }
-    });
-  }
+  if(delBtn) delBtn.addEventListener("click", ()=>{
+    if(confirm("Supprimer la méthode et sa règle de sortie ?")){ pfClearPlan(); close(); renderPlan(); toast("Plan supprimé."); }
+  });
+
   overlay.querySelector("#planConfirm").addEventListener("click", ()=>{
-    const strategyId = overlay.querySelector("#planStrategy").value;
-    const strategyName = strategyId === "autre" ? "Autre / choix manuel" : STRATEGIES[strategyId].name;
-    const exitType = overlay.querySelector('input[name="exitType"]:checked').value;
-    const exitDate = overlay.querySelector("#planExitDate").value;
-    const objective = overlay.querySelector("#planObjective").value.trim();
-
-    if(exitType === "date" && !exitDate){ toast("Choisis une date de sortie."); return; }
-    if(exitType === "objective" && !objective){ toast("Décris l'objectif de sortie."); return; }
-
-    pfSetPlan({ strategy: strategyId, strategyName, exitType, exitDate, objective });
+    const strategyId = stratSel.value;
+    const strategyName = STRATEGIES[strategyId].name;
+    let customRule = null;
+    if(customChk.checked){
+      const t = typeSel.value;
+      if(t === "months"){
+        const m = parseInt(overlay.querySelector("#customMonths").value, 10);
+        if(!m || m < 1){ toast("Durée invalide."); return; }
+        customRule = { type:"months", months:m, label:`Vendre après ${m} mois (réglage personnalisé)` };
+      } else if(t === "metric"){
+        const trimAt = parseFloat(overlay.querySelector("#customTrimAt").value);
+        const sellAt = parseFloat(overlay.querySelector("#customSellAt").value);
+        if(!sellAt || sellAt <= 0){ toast("Seuil de vente invalide."); return; }
+        customRule = { type:"metric", metric:"pe", trimAt, sellAt, label:`Vendre au-delà d'un PER de ${sellAt} (réglage personnalisé)` };
+      } else {
+        customRule = { type:"hold", label:"Conservation longue (réglage personnalisé)" };
+      }
+    }
+    pfSetPlan({ strategy: strategyId, strategyName, customRule });
     close();
     renderPlan();
-    toast("Plan enregistré.");
+    toast(customRule ? "Règle personnalisée enregistrée." : "Méthode enregistrée — règle par défaut appliquée.");
   });
 }
 
@@ -1520,7 +1626,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.22.0";
+  if(versionEl) versionEl.textContent = "v7.23.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

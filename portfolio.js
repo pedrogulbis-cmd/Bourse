@@ -335,6 +335,128 @@ function renderCash(cashRows){
  * portefeuille actif. Ne touche ni au cash, ni à l'historique de valeur
  * jour par jour, ni aux clôtures déjà enregistrées.
  */
+/** Bandeau du plan de sortie — rappelle la stratégie suivie et QUAND en
+ * sortir, avec alerte visuelle quand l'échéance approche ou est dépassée. */
+function renderPlan(){
+  const wrap = document.getElementById("planWrap");
+  if(!wrap) return;
+  const plan = pfGetPlan();
+
+  if(!plan){
+    wrap.innerHTML = `<div class="plan-bar plan-empty">
+      <span>Aucun plan de sortie défini pour ce portefeuille.</span>
+      <button class="btn-io" id="editPlanBtn">Définir un plan</button>
+    </div>`;
+  } else {
+    let statusHtml = "";
+    let barClass = "";
+    if(plan.exitType === "date" && plan.exitDate){
+      const today = new Date().toISOString().slice(0,10);
+      const daysLeft = Math.round((new Date(plan.exitDate) - new Date(today)) / 86400000);
+      if(daysLeft < 0){
+        barClass = "plan-due";
+        statusHtml = `<strong>Échéance dépassée depuis ${Math.abs(daysLeft)} jour(s)</strong> — il est temps de clôturer.`;
+      } else if(daysLeft <= 30){
+        barClass = "plan-soon";
+        statusHtml = `<strong>Sortie prévue dans ${daysLeft} jour(s)</strong> (${plan.exitDate}).`;
+      } else {
+        statusHtml = `Sortie prévue le <strong>${plan.exitDate}</strong> (dans ${daysLeft} jours).`;
+      }
+    } else {
+      statusHtml = `Objectif de sortie : <strong>${plan.objective || "—"}</strong>`;
+    }
+    wrap.innerHTML = `<div class="plan-bar ${barClass}">
+      <span class="plan-strategy">${plan.strategyName || plan.strategy || "Méthode non précisée"}</span>
+      <span class="plan-status">${statusHtml}</span>
+      <button class="btn-io" id="editPlanBtn">Modifier</button>
+    </div>`;
+  }
+  document.getElementById("editPlanBtn").addEventListener("click", openPlanModal);
+}
+
+function openPlanModal(){
+  const plan = pfGetPlan() || {};
+  const strategyOptions = STRATEGY_ORDER.map(id =>
+    `<option value="${id}" ${plan.strategy===id?'selected':''}>${STRATEGIES[id].name}</option>`
+  ).join('');
+  const isObjective = plan.exitType === "objective";
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Plan de sortie</h3>
+      <div class="modal-sub">Quelle méthode suit ce portefeuille, et quand en sortir ?</div>
+      <div class="modal-field">
+        <label>Méthode suivie</label>
+        <select id="planStrategy" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px 10px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.88rem;">
+          ${strategyOptions}
+          <option value="autre" ${plan.strategy==='autre'?'selected':''}>Autre / choix manuel</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Type de sortie</label>
+        <label class="pea-check"><input type="radio" name="exitType" value="date" ${!isObjective?'checked':''}> Date fixe <span class="pea-hint">(ex. Trending Value : rotation à 12 mois)</span></label>
+        <label class="pea-check" style="margin-top:6px;"><input type="radio" name="exitType" value="objective" ${isObjective?'checked':''}> Objectif <span class="pea-hint">(ex. Higgons : pas de date, on sort quand la thèse se réalise)</span></label>
+      </div>
+      <div class="modal-field" id="exitDateField" style="display:${isObjective?'none':'block'};">
+        <label>Date de sortie prévue</label>
+        <input type="date" id="planExitDate" value="${plan.exitDate || ''}">
+        <div style="font-size:0.7rem;color:var(--ink-faint);margin-top:5px;">
+          Astuce : pour une rotation à 12 mois, prends la date d'achat de tes positions + 1 an.
+        </div>
+      </div>
+      <div class="modal-field" id="objectiveField" style="display:${isObjective?'block':'none'};">
+        <label>Objectif de sortie</label>
+        <input type="text" id="planObjective" value="${plan.objective || ''}" placeholder="ex. P/E revenu à 15, ou thèse invalidée">
+      </div>
+      <div class="modal-actions">
+        ${pfGetPlan() ? `<button class="btn-cancel" id="planDelete">Supprimer le plan</button>` : ''}
+        <button class="btn-cancel" id="planCancel">Annuler</button>
+        <button class="btn-confirm" id="planConfirm">Enregistrer</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) close(); });
+  overlay.querySelector("#planCancel").addEventListener("click", close);
+  overlay.querySelectorAll('input[name="exitType"]').forEach(radio=>{
+    radio.addEventListener("change", ()=>{
+      const byDate = overlay.querySelector('input[name="exitType"]:checked').value === "date";
+      overlay.querySelector("#exitDateField").style.display = byDate ? "block" : "none";
+      overlay.querySelector("#objectiveField").style.display = byDate ? "none" : "block";
+    });
+  });
+  const delBtn = overlay.querySelector("#planDelete");
+  if(delBtn){
+    delBtn.addEventListener("click", ()=>{
+      if(confirm("Supprimer le plan de sortie de ce portefeuille ?")){
+        pfClearPlan();
+        close();
+        renderPlan();
+        toast("Plan supprimé.");
+      }
+    });
+  }
+  overlay.querySelector("#planConfirm").addEventListener("click", ()=>{
+    const strategyId = overlay.querySelector("#planStrategy").value;
+    const strategyName = strategyId === "autre" ? "Autre / choix manuel" : STRATEGIES[strategyId].name;
+    const exitType = overlay.querySelector('input[name="exitType"]:checked').value;
+    const exitDate = overlay.querySelector("#planExitDate").value;
+    const objective = overlay.querySelector("#planObjective").value.trim();
+
+    if(exitType === "date" && !exitDate){ toast("Choisis une date de sortie."); return; }
+    if(exitType === "objective" && !objective){ toast("Décris l'objectif de sortie."); return; }
+
+    pfSetPlan({ strategy: strategyId, strategyName, exitType, exitDate, objective });
+    close();
+    renderPlan();
+    toast("Plan enregistré.");
+  });
+}
+
 async function openCloseoutModal(){
   const portfolioId = pfGetActivePortfolioId();
   const holdings = pfGetHoldings(portfolioId);
@@ -358,7 +480,10 @@ async function openCloseoutModal(){
   const realizedGainPct = totalCostBasis>0 ? (realizedGain/totalCostBasis*100) : null;
 
   const today = new Date().toISOString().slice(0,10);
-  const strategyOptions = STRATEGY_ORDER.map(id => `<option value="${id}">${STRATEGIES[id].name}</option>`).join('');
+  // Pré-sélectionne la méthode du plan de sortie s'il en existe un — évite
+  // de resaisir la même information, et garde l'historique cohérent.
+  const plannedStrategy = (pfGetPlan(portfolioId) || {}).strategy;
+  const strategyOptions = STRATEGY_ORDER.map(id => `<option value="${id}" ${id===plannedStrategy?'selected':''}>${STRATEGIES[id].name}</option>`).join('');
 
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -1152,6 +1277,7 @@ async function importDegiroCSV(file){
 
   pfSetActivePortfolio(portfolioId);
   renderSwitcher();
+  renderPlan();
   renderPortfolio();
 
   let msg = `Portefeuille "${name.trim()}" créé : ${matched.length} position(s), ${cash.length} ligne(s) de cash importées.`;
@@ -1301,6 +1427,7 @@ async function importFortuneoPDF(file){
 
   pfSetActivePortfolio(portfolioId);
   renderSwitcher();
+  renderPlan();
   renderPortfolio();
 
   let msg = `Portefeuille "${name.trim()}" créé : ${matched.length} position(s) importées, avec le VRAI prix de revient fiscal Fortuneo (pas une approximation).`;
@@ -1328,6 +1455,7 @@ function renderSwitcher(){
       if(e.target.closest(".pf-menu-btn")) return;
       pfSetActivePortfolio(tab.dataset.pfId);
       renderSwitcher();
+      renderPlan();
       renderPortfolio();
     });
   });
@@ -1365,6 +1493,7 @@ function renderSwitcher(){
     if(name && name.trim()){
       pfCreatePortfolio(name.trim());
       renderSwitcher();
+      renderPlan();
       renderPortfolio();
     }
   });
@@ -1391,8 +1520,9 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.21.0";
+  if(versionEl) versionEl.textContent = "v7.22.0";
   renderSwitcher();
+  renderPlan();
   renderPortfolio();
   initHoldingsSuffixSelector();
   document.getElementById("chartStartDate").addEventListener("change", renderChart);

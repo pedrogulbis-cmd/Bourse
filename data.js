@@ -334,9 +334,138 @@ const STRATEGIES = {
       return w;
     }
   },
+
+  world_balanced: {
+    id: "world_balanced",
+    name: "World équilibré (indiciel sans biais)",
+    short: "Exposition mondiale large, avec plafonds pays et secteur",
+    stampReturn: null,
+    stampYears: null,
+    factors: [],
+    description: "N'est PAS une stratégie de sélection value comme les autres : c'est une construction de portefeuille indiciel, pensée pour reproduire une exposition mondiale large SANS le défaut principal des ETF MSCI World — la pondération par capitalisation flottante, qui concentre aujourd'hui une part très majoritaire sur les États-Unis et une large fraction de l'indice sur une dizaine de méga-caps technologiques. Ici, on retient les leaders solides de chaque marché, puis on applique des plafonds stricts par pays ET par secteur, pour obtenir une répartition réellement diversifiée. ⚠ Contrairement aux stratégies du livre, celle-ci n'a AUCUN backtest : c'est une règle de construction raisonnée, pas une performance historique validée.",
+    rules: [
+      "1. Grouper l'univers par pays, en ne gardant que les sociétés rentables (ROE > 0) et avec liquidité renseignée",
+      "2. Dans chaque pays, classer par capitalisation décroissante (les leaders de CE marché)",
+      "3. Sélectionner en rotation : le n°1 de chaque pays, puis le n°2 de chaque pays, etc.",
+      "4. Appliquer en parallèle un plafond de 20% par secteur",
+      "5. Assouplir le plafond secteur automatiquement si la liste ne peut pas être remplie",
+    ],
+    select(pool, n){
+      return selectRoundRobin(groupLeadersByCountry(pool), n, 0.20);
+    },
+    warn(s){
+      const w = [];
+      if(s.roe != null && s.roe < 0.05) w.push("Rentabilité faible (ROE < 5%)");
+      if(s.pe != null && s.pe > 40) w.push("Valorisation élevée (P/E > 40)");
+      return w;
+    }
+  },
+
+  europe_balanced: {
+    id: "europe_balanced",
+    name: "Europe équilibré (indiciel sans biais)",
+    short: "Exposition européenne large, avec plafonds pays et secteur",
+    stampReturn: null,
+    stampYears: null,
+    factors: [],
+    description: "Même logique que « World équilibré », appliquée à l'Europe. Les indices européens classiques souffrent du même travers à leur échelle : une poignée de très grosses capitalisations (luxe, pharma, semi-conducteurs) pèse une part disproportionnée, et quelques pays dominent largement. Cette construction retient les leaders solides puis applique des plafonds par pays et par secteur. Pense à ne cocher que des pays européens dans les filtres — la stratégie ne restreint pas la zone géographique elle-même, elle équilibre ce que tu lui donnes. ⚠ Aucun backtest : règle de construction raisonnée, pas une performance historique validée.",
+    rules: [
+      "1. Grouper l'univers par pays, en ne gardant que les sociétés rentables (ROE > 0) et avec liquidité renseignée",
+      "2. Dans chaque pays, classer par capitalisation décroissante (les leaders de CE marché)",
+      "3. Sélectionner en rotation : le n°1 de chaque pays, puis le n°2 de chaque pays, etc.",
+      "4. Appliquer en parallèle un plafond de 25% par secteur (un peu plus large : l'Europe a moins de marchés à répartir)",
+      "5. Assouplir le plafond secteur automatiquement si la liste ne peut pas être remplie",
+    ],
+    select(pool, n){
+      return selectRoundRobin(groupLeadersByCountry(pool), n, 0.25);
+    },
+    warn(s){
+      const w = [];
+      if(s.roe != null && s.roe < 0.05) w.push("Rentabilité faible (ROE < 5%)");
+      if(s.pe != null && s.pe > 40) w.push("Valorisation élevée (P/E > 40)");
+      return w;
+    }
+  },
 };
 
-// ---------- utils stats ----------
+/**
+ * Sélection en ROTATION entre pays : prend le meilleur titre de chaque
+ * pays, puis le 2ᵉ de chaque pays, etc. jusqu'à remplir n — avec un
+ * plafond par secteur appliqué en parallèle.
+ *
+ * Pourquoi pas un simple tri global avec plafonds : parce que les plus
+ * grosses capitalisations mondiales sont massivement américaines, donc un
+ * tri global suivi d'un filtre ne laisse presque aucun titre non-US à
+ * sélectionner — le plafond s'assouplit alors jusqu'à disparaître, et on
+ * retombe exactement sur le biais de concentration des ETF qu'on cherche
+ * à éviter. La rotation garantit au contraire qu'un petit marché est
+ * représenté par ses propres leaders.
+ *
+ * `poolBySortedCountry` : dict {pays: [titres triés par priorité]}.
+ */
+function selectRoundRobin(poolBySortedCountry, n, maxSectorPct){
+  const countries = Object.keys(poolBySortedCountry);
+  if(countries.length === 0) return [];
+
+  const sectorCapBase = Math.max(1, Math.round(n * maxSectorPct));
+  const attempt = (sectorCap) => {
+    const bySector = {};
+    const out = [];
+    const cursors = {};
+    countries.forEach(c=>cursors[c]=0);
+
+    let progressed = true;
+    while(out.length < n && progressed){
+      progressed = false;
+      for(const c of countries){
+        if(out.length >= n) break;
+        const list = poolBySortedCountry[c];
+        // avance jusqu'au prochain titre de ce pays qui respecte le plafond secteur
+        while(cursors[c] < list.length){
+          const s = list[cursors[c]];
+          cursors[c]++;
+          const sec = s.sector || "?";
+          if((bySector[sec]||0) >= sectorCap) continue;
+          out.push(s);
+          bySector[sec] = (bySector[sec]||0) + 1;
+          progressed = true;
+          break;
+        }
+      }
+    }
+    return out;
+  };
+
+  const totalAvailable = countries.reduce((s,c)=>s+poolBySortedCountry[c].length, 0);
+  const target = Math.min(n, totalAvailable);
+
+  let sectorCap = sectorCapBase;
+  let result = attempt(sectorCap);
+  let guard = 0;
+  while(result.length < target && guard < 500){
+    sectorCap++;
+    result = attempt(sectorCap);
+    guard++;
+  }
+  return result;
+}
+
+/** Prépare le dict {pays: [titres éligibles triés par capitalisation]} pour
+ * les stratégies indicielles — les leaders de CHAQUE marché, pas les
+ * leaders mondiaux (voir selectRoundRobin pour le raisonnement). */
+function groupLeadersByCountry(pool){
+  const byCountry = {};
+  pool.forEach(s=>{
+    if(s.mcap == null || s.avgDailyValue == null) return;
+    if(s.roe != null && s.roe <= 0) return; // écarte les sociétés en perte
+    const c = s.country || "?";
+    (byCountry[c] = byCountry[c] || []).push(s);
+  });
+  Object.keys(byCountry).forEach(c=>{
+    byCountry[c].sort((a,b)=>b.mcap-a.mcap);
+  });
+  return byCountry;
+}
 function median(arr){
   const a = arr.filter(x=>x!==null && !Number.isNaN(x)).sort((x,y)=>x-y);
   if(a.length===0) return 0;
@@ -363,7 +492,7 @@ function missingFactorCount(s){
 }
 
 // expose méthodologie triée dans l'ordre d'affichage souhaité
-const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders","higgons_v2"];
+const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stocks_growth","shareholder_yield","market_leaders","higgons_v2","world_balanced","europe_balanced"];
 
 // ===================================================================
 // Chargement du snapshot — partagé entre index.html, search.html et

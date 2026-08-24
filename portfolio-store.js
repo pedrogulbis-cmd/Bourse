@@ -207,6 +207,35 @@ function pfUpdateCash(id, updates, portfolioId){
 // performance réalisée au fil du temps, par méthode utilisée. Distinct de
 // l'historique de valeur (pfGetHistory) qui suit la valeur jour par jour.
 // ---------------------------------------------------------------
+// ---------------------------------------------------------------
+// Plan de sortie — stratégie suivie par ce portefeuille, et condition de
+// sortie associée. Deux formes possibles selon la méthode :
+//   - une DATE (ex. Trending Value : rotation à 12 mois, date fixe)
+//   - un OBJECTIF en texte libre (ex. Higgons : pas de date, on sort quand
+//     la thèse se réalise ou s'invalide)
+// ---------------------------------------------------------------
+function pfGetPlan(portfolioId){
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  return p ? (p.plan || null) : null;
+}
+
+function pfSetPlan(plan, portfolioId){
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  if(!p) return false;
+  p.plan = plan; // {strategy, strategyName, exitType:'date'|'objective', exitDate, objective}
+  return pfSaveStore(store);
+}
+
+function pfClearPlan(portfolioId){
+  const store = pfLoadStore();
+  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
+  if(!p) return false;
+  delete p.plan;
+  return pfSaveStore(store);
+}
+
 function pfGetClosures(portfolioId){
   const store = pfLoadStore();
   const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));

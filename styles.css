@@ -506,3 +506,22 @@ tr.fx-warn:hover{background:rgba(200,110,50,0.12);}
   table.holdings td, table.holdings th{padding:7px 6px;}
   .chart-controls .field{min-width:130px;flex:1;}
 }
+
+/* ---------- plan de sortie (page Portefeuille) ---------- */
+.plan-bar{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--hairline-bright);
+  border-left:3px solid var(--brass);border-radius:5px;
+  padding:11px 16px;margin-bottom:20px;font-size:0.83rem;color:var(--ink-dim);
+}
+.plan-bar .plan-strategy{
+  font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--brass-bright);
+  border:1px solid var(--brass);border-radius:3px;padding:3px 9px;
+}
+.plan-bar .plan-status{flex:1;}
+.plan-bar strong{color:var(--ink);font-weight:600;}
+.plan-bar .btn-io{padding:5px 12px;font-size:0.75rem;}
+.plan-bar.plan-empty{border-left-color:var(--hairline-bright);color:var(--ink-faint);}
+.plan-bar.plan-soon{border-left-color:var(--brass-bright);background:rgba(201,162,75,0.06);}
+.plan-bar.plan-due{border-left-color:var(--oxide-bright);background:rgba(200,110,50,0.08);}
+.plan-bar.plan-due strong{color:var(--oxide-bright);}

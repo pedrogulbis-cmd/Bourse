@@ -740,36 +740,54 @@ function openCashModal(cashId){
  */
 function buildHoldingDetail(r){
   const live = r.live;
-  const fmtNum = v => (v===null||v===undefined) ? "—" : v.toLocaleString('fr-FR',{maximumFractionDigits:2});
-  const fmtPct = v => (v===null||v===undefined) ? "—" : (v*100).toFixed(1)+"%";
+  const n = (v,d=1) => (v===null||v===undefined) ? "—" : v.toLocaleString('fr-FR',{maximumFractionDigits:d});
+  const pct = v => (v===null||v===undefined) ? "—" : (v*100).toFixed(1)+"%";
+  const signed = v => (v===null||v===undefined) ? "—" : (v>=0?"+":"")+v.toFixed(1)+"%";
+  const cap = v => {
+    if(v==null) return "—";
+    if(v>=1e12) return (v/1e12).toFixed(2)+" T";
+    if(v>=1e9) return (v/1e9).toFixed(2)+" Md";
+    if(v>=1e6) return (v/1e6).toFixed(0)+" M";
+    return n(v,0);
+  };
 
-  const metrics = live ? [
-    ["P/E", fmtNum(live.pe)],
-    ["P/B", fmtNum(live.pb)],
-    ["P/S", fmtNum(live.ps)],
-    ["P/CF", fmtNum(live.pcf)],
-    ["ROE", fmtPct(live.roe)],
-    ["Marge oper.", fmtPct(live.opMargin)],
-    ["Rend. div.", fmtPct(live.divYield)],
-    ["Momentum 6M", live.mom6!=null ? (live.mom6>=0?"+":"")+live.mom6.toFixed(1)+"%" : "—"],
-    ["Momentum 3M", live.mom3!=null ? (live.mom3>=0?"+":"")+live.mom3.toFixed(1)+"%" : "—"],
-    ["Capitalisation", live.mcap ? (live.mcap/1e9).toFixed(2)+" Md" : "—"],
-    ["Secteur", live.sector || "—"],
-    ["Analystes", live.analystLabel || "—"],
-  ] : [];
-
-  const metricsHtml = live
-    ? `<div class="hd-metrics">${metrics.map(([k,v])=>`<div class="hd-metric"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}</div>`
-    : `<div class="hd-empty">Pas de données de marché pour ce titre (non retrouvé dans le snapshot). Utilise « 🔄 Rechercher » après avoir relancé le scraper.</div>`;
+  let gridHtml;
+  if(live){
+    const items = [
+      ["Secteur", live.sector || "—"],
+      ["Prix actuel", n(live.price,2) + (r.currency && r.currency!=="EUR" ? ` ${r.currency}` : " €")],
+      ["Capitalisation", cap(live.mcap)],
+      ["P/E", n(live.pe)],
+      ["P/B", n(live.pb)],
+      ["P/S", n(live.ps)],
+      ["P/CF", n(live.pcf)],
+      ["EBITDA/EV", live.ebitdaYield!=null ? pct(live.ebitdaYield) : "—"],
+      ["Rend. actionnarial", pct(live.shareholderYield)],
+      ["— dont dividende", pct(live.divYield)],
+      ["ROE", pct(live.roe)],
+      ["Marge d'exploitation", pct(live.opMargin)],
+      ["Croissance CA (12M)", pct(live.revenueGrowth)],
+      ["Momentum 6 mois", signed(live.mom6)],
+      ["Momentum 3 mois", signed(live.mom3)],
+      ["Liquidité (valeur échangée/jour)", cap(live.avgDailyValue)],
+      ["Note des analystes", analystBadgeHTML(live.analystLabel)],
+    ];
+    gridHtml = `<div class="detail-grid">` +
+      items.map(([k,v])=>`<div class="detail-item"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') +
+      `</div>`;
+  } else {
+    gridHtml = `<div class="detail-note">Pas de données de marché pour ce titre (non retrouvé dans le snapshot). Utilise « 🔄 Rechercher » après avoir relancé le scraper.</div>`;
+  }
 
   // --- Position par rapport à la règle de sortie de la stratégie suivie ---
   const plan = getEffectivePlan();
   let ruleHtml = "";
+
   if(plan && plan.rule.type === "metric" && plan.rule.metric === "pe"){
     const pe = live ? live.pe : null;
     const trimAt = plan.rule.trimAt, sellAt = plan.rule.sellAt;
     if(pe == null){
-      ruleHtml = `<div class="hd-rule"><div class="hd-rule-title">${plan.strategyName}</div><div>P/E indisponible — impossible de situer ce titre par rapport aux seuils.</div></div>`;
+      ruleHtml = `<div class="hd-rule"><div class="hd-rule-title">${plan.strategyName}</div><div class="hd-verdict">P/E indisponible — impossible de situer ce titre par rapport aux seuils.</div></div>`;
     } else {
       let verdict, cls;
       if(pe >= sellAt){
@@ -780,7 +798,6 @@ function buildHoldingDetail(r){
       } else {
         verdict = `Sous les seuils : P/E ${pe.toFixed(1)} — allègement à ${trimAt}, vente au-delà de ${sellAt}. Rien à faire.`; cls = "ok";
       }
-      // barre visuelle : position du P/E sur l'échelle 0 -> sellAt*1.3
       const scaleMax = sellAt * 1.3;
       const pos = Math.min(100, (pe / scaleMax) * 100);
       const trimPos = (trimAt / scaleMax) * 100;
@@ -801,19 +818,17 @@ function buildHoldingDetail(r){
         <div class="hd-verdict">${verdict}</div>
       </div>`;
     }
-  } else if(plan && plan.rule.type === "months"){
-    if(plan.exitDate){
-      const daysLeft = Math.round((new Date(plan.exitDate) - new Date(new Date().toISOString().slice(0,10))) / 86400000);
-      const cls = daysLeft < 0 ? "due" : (daysLeft <= 30 ? "warn" : "ok");
-      const txt = daysLeft < 0
-        ? `Échéance dépassée depuis ${Math.abs(daysLeft)} jour(s) — rotation ${plan.rule.months} mois prévue le ${plan.exitDate}.`
-        : `Vente prévue le ${plan.exitDate}, dans ${daysLeft} jour(s) (rotation ${plan.rule.months} mois depuis le ${plan.startDate}).`;
-      ruleHtml = `<div class="hd-rule ${cls}">
-        <div class="hd-rule-title">${plan.strategyName} — échéance de rotation</div>
-        <div class="hd-verdict">${txt}</div>
-        <div class="hd-note">Cette stratégie vend le panier entier à échéance, quels que soient les multiples du titre — la date prime sur le P/E.</div>
-      </div>`;
-    }
+  } else if(plan && plan.rule.type === "months" && plan.exitDate){
+    const daysLeft = Math.round((new Date(plan.exitDate) - new Date(new Date().toISOString().slice(0,10))) / 86400000);
+    const cls = daysLeft < 0 ? "due" : (daysLeft <= 30 ? "warn" : "ok");
+    const txt = daysLeft < 0
+      ? `Échéance dépassée depuis ${Math.abs(daysLeft)} jour(s) — rotation ${plan.rule.months} mois prévue le ${plan.exitDate}.`
+      : `Vente prévue le ${plan.exitDate}, dans ${daysLeft} jour(s) (rotation ${plan.rule.months} mois depuis le ${plan.startDate}).`;
+    ruleHtml = `<div class="hd-rule ${cls}">
+      <div class="hd-rule-title">${plan.strategyName} — échéance de rotation</div>
+      <div class="hd-verdict">${txt}</div>
+      <div class="detail-note">Cette stratégie vend le panier entier à échéance, quels que soient les multiples du titre — la date prime sur le P/E.</div>
+    </div>`;
   } else if(plan && plan.rule.type === "hold"){
     ruleHtml = `<div class="hd-rule ok">
       <div class="hd-rule-title">${plan.strategyName}</div>
@@ -823,7 +838,7 @@ function buildHoldingDetail(r){
     ruleHtml = `<div class="hd-rule"><div class="hd-verdict">Aucune méthode définie pour ce portefeuille — choisis-en une en haut de page pour voir où se situe ce titre par rapport à sa règle de sortie.</div></div>`;
   }
 
-  return `<div class="holding-detail">${metricsHtml}${ruleHtml}</div>`;
+  return gridHtml + ruleHtml;
 }
 
 function renderHoldingsTable(rows){
@@ -857,7 +872,7 @@ function renderHoldingsTable(rows){
         <button class="remove-btn" data-remove-id="${r.id}" title="Retirer du portefeuille">✕</button>
       </td>
     </tr>
-    <tr class="holding-detail-row" data-detail-for="${r.id}" style="display:none;">
+    <tr class="holding-detail-row detail-row" data-detail-for="${r.id}" style="display:none;">
       <td colspan="9">${buildHoldingDetail(r)}</td>
     </tr>`;
   });
@@ -1755,7 +1770,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.25.0";
+  if(versionEl) versionEl.textContent = "v7.26.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

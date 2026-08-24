@@ -422,15 +422,35 @@ function renderPlan(){
       statusHtml = `Vendre quand le PER dépasse <strong>${plan.rule.sellAt}</strong>${plan.rule.trimAt?` (alléger dès ${plan.rule.trimAt})`:''}.`;
       // Vérifie directement quelles positions atteignent le seuil — c'est
       // tout l'intérêt d'une règle sur multiple plutôt que sur date.
-      const hits = (window.__lastRows || []).filter(r=> r.live && r.live.pe != null && r.live.pe >= plan.rule.sellAt);
-      const trims = (window.__lastRows || []).filter(r=> r.live && r.live.pe != null && plan.rule.trimAt && r.live.pe >= plan.rule.trimAt && r.live.pe < plan.rule.sellAt);
-      if(hits.length){
+      const rows = window.__lastRows || [];
+      const above = rows.filter(r=> r.live && r.live.pe != null && r.live.pe >= plan.rule.sellAt);
+      // Un PER élevé n'a PAS le même sens selon que la position gagne ou perd :
+      //  - en gain  -> le cours a monté, la décote a disparu : c'est le cas visé
+      //                par Higgons ("vendre au-delà de 20"), thèse réalisée.
+      //  - en perte -> le PER explose parce que les BÉNÉFICES se sont effondrés,
+      //                pas parce que le cours a monté. C'est un piège de valeur,
+      //                un signal différent qu'il ne faut pas confondre avec une
+      //                réussite (Higgons conseille par ailleurs de se séparer des
+      //                titres sur lesquels on perd le plus, mais c'est une autre
+      //                logique — à l'utilisateur de trancher en connaissance).
+      const realized = above.filter(r=> (r.gain||0) >= 0);
+      const traps = above.filter(r=> (r.gain||0) < 0);
+      const trims = rows.filter(r=> r.live && r.live.pe != null && plan.rule.trimAt && r.live.pe >= plan.rule.trimAt && r.live.pe < plan.rule.sellAt);
+
+      const parts = [];
+      if(realized.length){
         barClass = "plan-due";
-        extra = `<div class="plan-hits"><strong>À vendre (PER ≥ ${plan.rule.sellAt})</strong> : ${hits.map(h=>`${h.name} (${h.live.pe.toFixed(1)})`).join(', ')}</div>`;
-      } else if(trims.length){
-        barClass = "plan-soon";
-        extra = `<div class="plan-hits"><strong>À alléger (PER ≥ ${plan.rule.trimAt})</strong> : ${trims.map(h=>`${h.name} (${h.live.pe.toFixed(1)})`).join(', ')}</div>`;
+        parts.push(`<div><strong>Objectif atteint — à vendre</strong> (PER ≥ ${plan.rule.sellAt}, en plus-value) : ${realized.map(h=>`${h.name} (PER ${h.live.pe.toFixed(1)})`).join(', ')}</div>`);
       }
+      if(traps.length){
+        if(!barClass) barClass = "plan-soon";
+        parts.push(`<div style="margin-top:6px;"><strong>PER élevé mais en moins-value</strong> — bénéfices en baisse, pas une thèse réalisée : ${traps.map(h=>`${h.name} (PER ${h.live.pe.toFixed(1)})`).join(', ')}. À examiner séparément : la règle des 20 vise les titres devenus chers par hausse du cours, pas ceux dont les résultats s'effondrent.</div>`);
+      }
+      if(!realized.length && !traps.length && trims.length){
+        barClass = "plan-soon";
+        parts.push(`<div><strong>À alléger (PER ≥ ${plan.rule.trimAt})</strong> : ${trims.map(h=>`${h.name} (PER ${h.live.pe.toFixed(1)})`).join(', ')}</div>`);
+      }
+      if(parts.length) extra = `<div class="plan-hits">${parts.join('')}</div>`;
     } else {
       statusHtml = plan.rule.label || "Conservation longue.";
     }
@@ -1626,7 +1646,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.23.0";
+  if(versionEl) versionEl.textContent = "v7.24.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

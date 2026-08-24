@@ -732,6 +732,100 @@ function openCashModal(cashId){
   });
 }
 
+/**
+ * Détail dépliable d'une position : les chiffres utiles à la décision de
+ * vente, et surtout OÙ SE SITUE ce titre par rapport aux seuils de la
+ * stratégie suivie (voir getEffectivePlan). L'idée est de ne pas avoir à
+ * aller chercher le PER ailleurs au moment de trancher.
+ */
+function buildHoldingDetail(r){
+  const live = r.live;
+  const fmtNum = v => (v===null||v===undefined) ? "—" : v.toLocaleString('fr-FR',{maximumFractionDigits:2});
+  const fmtPct = v => (v===null||v===undefined) ? "—" : (v*100).toFixed(1)+"%";
+
+  const metrics = live ? [
+    ["P/E", fmtNum(live.pe)],
+    ["P/B", fmtNum(live.pb)],
+    ["P/S", fmtNum(live.ps)],
+    ["P/CF", fmtNum(live.pcf)],
+    ["ROE", fmtPct(live.roe)],
+    ["Marge oper.", fmtPct(live.opMargin)],
+    ["Rend. div.", fmtPct(live.divYield)],
+    ["Momentum 6M", live.mom6!=null ? (live.mom6>=0?"+":"")+live.mom6.toFixed(1)+"%" : "—"],
+    ["Momentum 3M", live.mom3!=null ? (live.mom3>=0?"+":"")+live.mom3.toFixed(1)+"%" : "—"],
+    ["Capitalisation", live.mcap ? (live.mcap/1e9).toFixed(2)+" Md" : "—"],
+    ["Secteur", live.sector || "—"],
+    ["Analystes", live.analystLabel || "—"],
+  ] : [];
+
+  const metricsHtml = live
+    ? `<div class="hd-metrics">${metrics.map(([k,v])=>`<div class="hd-metric"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}</div>`
+    : `<div class="hd-empty">Pas de données de marché pour ce titre (non retrouvé dans le snapshot). Utilise « 🔄 Rechercher » après avoir relancé le scraper.</div>`;
+
+  // --- Position par rapport à la règle de sortie de la stratégie suivie ---
+  const plan = getEffectivePlan();
+  let ruleHtml = "";
+  if(plan && plan.rule.type === "metric" && plan.rule.metric === "pe"){
+    const pe = live ? live.pe : null;
+    const trimAt = plan.rule.trimAt, sellAt = plan.rule.sellAt;
+    if(pe == null){
+      ruleHtml = `<div class="hd-rule"><div class="hd-rule-title">${plan.strategyName}</div><div>P/E indisponible — impossible de situer ce titre par rapport aux seuils.</div></div>`;
+    } else {
+      let verdict, cls;
+      if(pe >= sellAt){
+        if((r.gain||0) >= 0){ verdict = `Seuil de vente atteint (P/E ${pe.toFixed(1)} ≥ ${sellAt}) et position en plus-value : objectif rempli.`; cls = "due"; }
+        else { verdict = `P/E ${pe.toFixed(1)} ≥ ${sellAt}, mais position en moins-value : le P/E est élevé parce que les bénéfices ont baissé, pas parce que le cours a monté. Autre décision que la règle des ${sellAt}.`; cls = "warn"; }
+      } else if(trimAt && pe >= trimAt){
+        verdict = `Zone d'allègement (P/E ${pe.toFixed(1)} ≥ ${trimAt}, vente au-delà de ${sellAt}).`; cls = "warn";
+      } else {
+        verdict = `Sous les seuils : P/E ${pe.toFixed(1)} — allègement à ${trimAt}, vente au-delà de ${sellAt}. Rien à faire.`; cls = "ok";
+      }
+      // barre visuelle : position du P/E sur l'échelle 0 -> sellAt*1.3
+      const scaleMax = sellAt * 1.3;
+      const pos = Math.min(100, (pe / scaleMax) * 100);
+      const trimPos = (trimAt / scaleMax) * 100;
+      const sellPos = (sellAt / scaleMax) * 100;
+      ruleHtml = `<div class="hd-rule ${cls}">
+        <div class="hd-rule-title">${plan.strategyName} — où se situe ce titre</div>
+        <div class="hd-scale">
+          <div class="hd-scale-bar">
+            <div class="hd-scale-zone" style="left:0;width:${trimPos}%;background:rgba(91,138,122,0.25);"></div>
+            <div class="hd-scale-zone" style="left:${trimPos}%;width:${sellPos-trimPos}%;background:rgba(201,162,75,0.3);"></div>
+            <div class="hd-scale-zone" style="left:${sellPos}%;right:0;background:rgba(200,110,50,0.3);"></div>
+            <div class="hd-scale-marker" style="left:${pos}%;" title="P/E actuel : ${pe.toFixed(1)}"></div>
+          </div>
+          <div class="hd-scale-labels">
+            <span>0</span><span style="position:absolute;left:${trimPos}%;">alléger ${trimAt}</span><span style="position:absolute;left:${sellPos}%;">vendre ${sellAt}</span>
+          </div>
+        </div>
+        <div class="hd-verdict">${verdict}</div>
+      </div>`;
+    }
+  } else if(plan && plan.rule.type === "months"){
+    if(plan.exitDate){
+      const daysLeft = Math.round((new Date(plan.exitDate) - new Date(new Date().toISOString().slice(0,10))) / 86400000);
+      const cls = daysLeft < 0 ? "due" : (daysLeft <= 30 ? "warn" : "ok");
+      const txt = daysLeft < 0
+        ? `Échéance dépassée depuis ${Math.abs(daysLeft)} jour(s) — rotation ${plan.rule.months} mois prévue le ${plan.exitDate}.`
+        : `Vente prévue le ${plan.exitDate}, dans ${daysLeft} jour(s) (rotation ${plan.rule.months} mois depuis le ${plan.startDate}).`;
+      ruleHtml = `<div class="hd-rule ${cls}">
+        <div class="hd-rule-title">${plan.strategyName} — échéance de rotation</div>
+        <div class="hd-verdict">${txt}</div>
+        <div class="hd-note">Cette stratégie vend le panier entier à échéance, quels que soient les multiples du titre — la date prime sur le P/E.</div>
+      </div>`;
+    }
+  } else if(plan && plan.rule.type === "hold"){
+    ruleHtml = `<div class="hd-rule ok">
+      <div class="hd-rule-title">${plan.strategyName}</div>
+      <div class="hd-verdict">Conservation longue — aucune sortie prévue par la méthode.</div>
+    </div>`;
+  } else {
+    ruleHtml = `<div class="hd-rule"><div class="hd-verdict">Aucune méthode définie pour ce portefeuille — choisis-en une en haut de page pour voir où se situe ce titre par rapport à sa règle de sortie.</div></div>`;
+  }
+
+  return `<div class="holding-detail">${metricsHtml}${ruleHtml}</div>`;
+}
+
 function renderHoldingsTable(rows){
   const wrap = document.getElementById("holdingsWrap");
   if(rows.length === 0){
@@ -748,7 +842,7 @@ function renderHoldingsTable(rows){
     const gainClass = r.gain==null ? "" : (r.gain>=0 ? "pos" : "neg");
     const ccySuffix = r.currency && r.currency !== "EUR" ? ` ${r.currency}` : " €";
     const purchaseCcySuffix = r.purchaseCcy && r.purchaseCcy !== "EUR" ? ` ${r.purchaseCcy}` : " €";
-    html += `<tr${!r.fxOk?' class="fx-warn"':''}>
+    html += `<tr class="holding-row${!r.fxOk?' fx-warn':''}" data-detail-id="${r.id}">
       <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}${r.live?homeCountryBadge(r.live):''}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
       <td class="num">${r.quantity}</td>
       <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
@@ -762,6 +856,9 @@ function renderHoldingsTable(rows){
         ${otherPortfolios.length ? `<button class="move-btn" data-move-id="${r.id}" title="Déplacer vers un autre portefeuille">⇄</button>` : ''}
         <button class="remove-btn" data-remove-id="${r.id}" title="Retirer du portefeuille">✕</button>
       </td>
+    </tr>
+    <tr class="holding-detail-row" data-detail-for="${r.id}" style="display:none;">
+      <td colspan="9">${buildHoldingDetail(r)}</td>
     </tr>`;
   });
   html += `</tbody></table>`;
@@ -779,6 +876,18 @@ function renderHoldingsTable(rows){
         pfRemoveHolding(btn.dataset.removeId);
         renderPortfolio();
       }
+    });
+  });
+
+  wrap.querySelectorAll("tr.holding-row").forEach(row=>{
+    row.addEventListener("click", (e)=>{
+      // ne pas déplier si on a cliqué un bouton d'action (✎ ⇄ ✕ 🔄)
+      if(e.target.closest("button")) return;
+      const detail = wrap.querySelector(`tr.holding-detail-row[data-detail-for="${row.dataset.detailId}"]`);
+      if(!detail) return;
+      const open = detail.style.display !== "none";
+      detail.style.display = open ? "none" : "table-row";
+      row.classList.toggle("expanded", !open);
     });
   });
 
@@ -1646,7 +1755,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.24.0";
+  if(versionEl) versionEl.textContent = "v7.25.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

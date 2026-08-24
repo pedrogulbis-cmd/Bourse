@@ -536,3 +536,26 @@ tr.fx-warn:hover{background:rgba(200,110,50,0.12);}
 .plan-default-label{font-size:0.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:5px;}
 .plan-default-text{font-size:0.84rem;color:var(--ink);}
 .plan-default-source{font-size:0.72rem;color:var(--ink-faint);margin-top:6px;font-style:italic;}
+
+/* ---------- détail dépliable d'une position ---------- */
+tr.holding-row{cursor:pointer;}
+tr.holding-row:hover{background:rgba(201,162,75,0.05);}
+tr.holding-row.expanded{background:rgba(201,162,75,0.08);}
+.holding-detail{padding:14px 16px;background:var(--paper);border-left:2px solid var(--brass);}
+.hd-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px 16px;margin-bottom:14px;}
+.hd-metric{display:flex;flex-direction:column;gap:2px;}
+.hd-metric .k{font-size:0.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);}
+.hd-metric .v{font-family:'IBM Plex Mono',monospace;font-size:0.86rem;color:var(--ink);}
+.hd-empty{font-size:0.82rem;color:var(--ink-faint);margin-bottom:12px;}
+.hd-rule{border-top:1px solid var(--hairline);padding-top:12px;}
+.hd-rule-title{font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--brass-bright);margin-bottom:10px;}
+.hd-verdict{font-size:0.84rem;color:var(--ink-dim);line-height:1.5;}
+.hd-rule.ok .hd-verdict{color:var(--verdigris-bright);}
+.hd-rule.warn .hd-verdict{color:var(--brass-bright);}
+.hd-rule.due .hd-verdict{color:var(--oxide-bright);font-weight:600;}
+.hd-note{font-size:0.75rem;color:var(--ink-faint);margin-top:7px;font-style:italic;}
+.hd-scale{margin-bottom:12px;}
+.hd-scale-bar{position:relative;height:9px;border-radius:5px;overflow:hidden;background:var(--panel);}
+.hd-scale-zone{position:absolute;top:0;bottom:0;}
+.hd-scale-marker{position:absolute;top:-3px;width:3px;height:15px;background:var(--ink);border-radius:2px;transform:translateX(-50%);}
+.hd-scale-labels{position:relative;height:16px;margin-top:5px;font-size:0.66rem;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;}

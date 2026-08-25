@@ -345,6 +345,13 @@ const STRATEGIES = {
   world_balanced: {
     id: "world_balanced",
     exitRule: { type:"hold", label:"Conservation longue — pas de date de sortie prévue (approche indicielle)", source:"Construction indicielle : l'intérêt vient de la durée de détention, pas de la rotation" },
+    // Préconfiguration imposée : ces stratégies indicielles n'ont de sens que
+    // sur leur zone géographique complète. Laisser l'utilisateur cocher des
+    // pays au hasard contredirait leur principe même (répartition automatique).
+    presetZone: "world",
+    presetMcapFloor: 1000000000,
+    presetLiquidityFloor: 500000,
+    lockCountries: true,
     name: "World équilibré (indiciel sans biais)",
     short: "Exposition mondiale large, avec plafonds pays et secteur",
     stampReturn: null,
@@ -372,6 +379,10 @@ const STRATEGIES = {
   europe_balanced: {
     id: "europe_balanced",
     exitRule: { type:"hold", label:"Conservation longue — pas de date de sortie prévue (approche indicielle)", source:"Construction indicielle : l'intérêt vient de la durée de détention, pas de la rotation" },
+    presetZone: "eu",
+    presetMcapFloor: 1000000000,
+    presetLiquidityFloor: 500000,
+    lockCountries: true,
     name: "Europe équilibré (indiciel sans biais)",
     short: "Exposition européenne large, avec plafonds pays et secteur",
     stampReturn: null,

@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.26.0";
+const APP_VERSION = "v7.27.0";
 
 let state = {
   strategy: "trending_value",
@@ -261,6 +261,53 @@ function fmtMcap(v){
 // ---------------------------------------------------------------
 // Rendu UI
 // ---------------------------------------------------------------
+/**
+ * Applique la configuration imposée par une stratégie "indicielle"
+ * (World/Europe équilibré) : zone géographique complète, plancher de
+ * capitalisation et de liquidité. Ces méthodes reposent sur une
+ * répartition AUTOMATIQUE entre tous les marchés de leur zone — laisser
+ * l'utilisateur cocher trois pays au hasard contredirait leur principe.
+ * Les filtres concernés sont alors verrouillés visuellement.
+ */
+function applyStrategyPreset(strat){
+  const zoneWrap = document.getElementById("zoneRow");
+  const countryWrap = document.getElementById("countryList");
+  const mcapSel = document.getElementById("mcapFloor");
+  const liqSel = document.getElementById("liquidityFloor");
+
+  const lock = !!strat.lockCountries;
+  [zoneWrap, countryWrap].forEach(el=>{ if(el) el.classList.toggle("locked-by-strategy", lock); });
+  [mcapSel, liqSel].forEach(el=>{ if(el){ el.disabled = lock; el.classList.toggle("locked-by-strategy", lock); } });
+
+  const note = document.getElementById("strategyPresetNote");
+  if(!lock){
+    if(note) note.style.display = "none";
+    return;
+  }
+
+  const zone = ZONES.find(z=>z.id === strat.presetZone);
+  if(zone){
+    state.countries = new Set(zone.countries);
+    // On repasse par renderCountryList() plutôt que de cocher les cases à la
+    // main : les <input> n'ont pas d'attribut value, la correspondance
+    // case <-> pays se fait à la construction de la liste.
+    renderCountryList();
+  }
+  if(strat.presetMcapFloor != null && mcapSel){
+    state.mcapFloor = strat.presetMcapFloor;
+    mcapSel.value = String(strat.presetMcapFloor);
+  }
+  if(strat.presetLiquidityFloor != null && liqSel){
+    state.liquidityFloor = strat.presetLiquidityFloor;
+    liqSel.value = String(strat.presetLiquidityFloor);
+  }
+
+  if(note){
+    note.style.display = "block";
+    note.innerHTML = `<strong>${strat.name}</strong> configure automatiquement les filtres : ${zone?zone.label.toLowerCase():'zone complète'}, capitalisation ≥ ${(strat.presetMcapFloor/1e9).toFixed(0)} Md, liquidité ≥ ${(strat.presetLiquidityFloor/1000).toFixed(0)} K$/jour. Ces réglages sont verrouillés — la répartition entre marchés est le cœur de la méthode. Choisis une autre stratégie pour les débloquer.`;
+  }
+}
+
 function renderStrategyCards(){
   const grid = document.getElementById("strategyGrid");
   grid.innerHTML = "";
@@ -289,6 +336,8 @@ function renderStrategyCards(){
         if(sel) sel.value = "200000000";
         toast(`${s.name} a un plafond de capitalisation intégré (≤ ${(s.hardMcapCeiling/1e9).toFixed(0)} Md) — plancher repassé à 200 M$ automatiquement.`);
       }
+
+      applyStrategyPreset(s);
     });
     grid.appendChild(card);
   });

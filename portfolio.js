@@ -1727,6 +1727,49 @@ async function fillSwitcherValues(portfolios){
   });
 }
 
+/**
+ * Copie la liste des symboles de TOUS les portefeuilles, au format attendu
+ * par le secret GitHub HOLDINGS_SYMBOLS_* — c'est cette liste que
+ * l'automatisation utilise pour récupérer l'historique de prix, et elle
+ * doit être mise à jour à chaque changement de positions. La recopier à la
+ * main depuis un export JSON était fastidieux et source d'erreurs.
+ */
+async function copySecretsToClipboard(){
+  const portfolios = pfGetPortfolios();
+  const symbols = [...new Set(
+    portfolios.flatMap(p => (p.holdings||[]).map(h=>h.symbol)).filter(Boolean)
+  )].sort();
+
+  if(symbols.length === 0){
+    toast("Aucune position dans tes portefeuilles — rien à copier.");
+    return;
+  }
+  const line = symbols.join(",");
+
+  try{
+    await navigator.clipboard.writeText(line);
+    toast(`${symbols.length} symboles copiés — colle-les dans le secret GitHub HOLDINGS_SYMBOLS (Settings → Secrets and variables → Actions).`);
+  }catch(e){
+    // navigator.clipboard exige un contexte sécurisé (https) et une
+    // interaction : on affiche le texte pour copie manuelle en repli.
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <h3>Tes symboles</h3>
+        <div class="modal-sub">La copie automatique a échoué — sélectionne le texte ci-dessous et copie-le à la main.</div>
+        <div class="modal-field">
+          <textarea id="secretsText" rows="5" style="width:100%;background:var(--paper);border:1px solid var(--hairline-bright);color:var(--ink);padding:9px;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;">${line}</textarea>
+        </div>
+        <div class="modal-actions"><button class="btn-cancel" id="secretsClose">Fermer</button></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("#secretsText").select();
+    overlay.querySelector("#secretsClose").addEventListener("click", ()=>overlay.remove());
+    overlay.addEventListener("click", (ev)=>{ if(ev.target===overlay) overlay.remove(); });
+  }
+}
+
 function renderSwitcher(){
   const wrap = document.getElementById("pfSwitcher");
   const portfolios = pfGetPortfolios();
@@ -1815,7 +1858,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.31.0";
+  if(versionEl) versionEl.textContent = "v7.32.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();
@@ -1880,6 +1923,7 @@ function init(){
     if(file) importDegiroCSV(file);
     e.target.value = "";
   });
+  document.getElementById("copySecretsBtn").addEventListener("click", copySecretsToClipboard);
   document.getElementById("importFortuneoBtn").addEventListener("click", ()=>{
     document.getElementById("importFortuneoFile").click();
   });

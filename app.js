@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.31.0";
+const APP_VERSION = "v7.32.0";
 
 let state = {
   strategy: "trending_value",
@@ -412,8 +412,8 @@ function renderMethodology(){
 }
 
 const COLS = [
-  {key:"rank", label:"#", num:true},
-  {key:"symbol", label:"Titre"},
+  {key:"rank", label:"Rang", num:true, fixed:true},
+  {key:"symbol", label:"Titre", fixed:true},
   {key:"vc2Score", label:"Score", num:true},
   {key:"mom6", label:"Mom. 6M", num:true},
   {key:"mom3", label:"Mom. 3M", num:true},
@@ -473,6 +473,7 @@ function renderResults(){
 
   exportBtn.style.display = "inline-block";
   exportExcelBtn.style.display = "inline-block";
+  document.getElementById("colsBtn").style.display = "inline-block";
 
   let rows = [...state.lastResults];
   if(state.sortCol !== "rank"){
@@ -483,8 +484,11 @@ function renderResults(){
     });
   }
 
+  // Colonnes réordonnées / filtrées selon la préférence de l'utilisateur
+  const cols = applyColumnPrefs("screener", COLS);
+
   let html = `<table class="results"><thead><tr>`;
-  COLS.forEach(c=>{
+  cols.forEach(c=>{
     html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted '+state.sortDir:''}" title="Cliquer pour trier">${c.label}</th>`;
   });
   html += `<th class="addcol"></th>`;
@@ -500,22 +504,27 @@ function renderResults(){
     const isHeld = heldSymbols.has(s.symbol);
     const heldBadge = isHeld ? `<span class="held-badge" title="Déjà dans ton portefeuille">📌</span>` : '';
     const rowClasses = [warnings.length ? 'has-warn' : '', isHeld ? 'has-held' : ''].filter(Boolean).join(' ');
+    // Chaque cellule est produite à la demande, dans l'ordre choisi par
+    // l'utilisateur (voir columns.js) plutôt qu'en dur.
+    const cellHtml = {
+      rank:             `<td class="rank" data-label="Rang">${rank}${warnBadge}</td>`,
+      symbol:           `<td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}${heldBadge}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>`,
+      vc2Score:         `<td class="num" data-label="Score"><span class="score-pill">${s.vc2Score}</span></td>`,
+      mom6:             `<td class="num ${s.mom6>=0?'pos':'neg'}" data-label="Momentum 6M">${fmtMom(s.mom6)}</td>`,
+      mom3:             `<td class="num ${s.mom3>=0?'pos':'neg'}" data-label="Momentum 3M">${fmtMom(s.mom3)}</td>`,
+      pe:               `<td class="num" data-label="P/E">${fmtNum(s.pe)}</td>`,
+      pb:               `<td class="num" data-label="P/B">${fmtNum(s.pb)}</td>`,
+      ps:               `<td class="num" data-label="P/S">${fmtNum(s.ps)}</td>`,
+      shareholderYield: `<td class="num ${s.shareholderYield>=0?'pos':'neg'}" data-label="Rend. actionnarial">${fmtPct(s.shareholderYield)}</td>`,
+      mcap:             `<td class="num" data-label="Capitalisation">${fmtMcap(s.mcap)}</td>`,
+      analystLabel:     `<td class="num" data-label="Analystes">${analystBadgeHTML(s.analystLabel)}</td>`,
+      country:          `<td class="num" data-label="Pays">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>`,
+    };
     html += `<tr data-symbol="${s.symbol}"${rowClasses ? ` class="${rowClasses}"` : ''}>
-      <td class="rank" data-label="Rang">${rank}${warnBadge}</td>
-      <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}${heldBadge}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
-      <td class="num" data-label="Score"><span class="score-pill">${s.vc2Score}</span></td>
-      <td class="num ${s.mom6>=0?'pos':'neg'}" data-label="Momentum 6M">${fmtMom(s.mom6)}</td>
-      <td class="num ${s.mom3>=0?'pos':'neg'}" data-label="Momentum 3M">${fmtMom(s.mom3)}</td>
-      <td class="num" data-label="P/E">${fmtNum(s.pe)}</td>
-      <td class="num" data-label="P/B">${fmtNum(s.pb)}</td>
-      <td class="num" data-label="P/S">${fmtNum(s.ps)}</td>
-      <td class="num ${s.shareholderYield>=0?'pos':'neg'}" data-label="Rend. actionnarial">${fmtPct(s.shareholderYield)}</td>
-      <td class="num" data-label="Capitalisation">${fmtMcap(s.mcap)}</td>
-      <td class="num" data-label="Analystes">${analystBadgeHTML(s.analystLabel)}</td>
-      <td class="num" data-label="Pays">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>
+      ${cols.map(c=>cellHtml[c.key] || '<td></td>').join('')}
       <td class="addcol">${renderAddBtn(s)}</td>
     </tr>
-    <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${COLS.length+1}">
+    <tr class="detail-row" style="display:none" data-detail-for="${s.symbol}"><td colspan="${cols.length+1}">
       <div class="detail-grid">
         <div class="detail-item"><div class="k">Secteur</div><div class="v">${s.sector}</div></div>
         <div class="detail-item"><div class="k">Bourse</div><div class="v">${s.exchange||'—'}</div></div>
@@ -682,6 +691,9 @@ function init(){
   document.getElementById("runBtn").addEventListener("click", runScreening);
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
   document.getElementById("exportExcelBtn").addEventListener("click", exportExcel);
+  document.getElementById("colsBtn").addEventListener("click", ()=>{
+    openColumnsModal("screener", COLS, renderResults);
+  });
 }
 
 // ---------------------------------------------------------------

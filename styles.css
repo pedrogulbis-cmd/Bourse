@@ -570,3 +570,36 @@ tr.holding-row.expanded{background:rgba(201,162,75,0.08);}
 .strategy-preset-note strong{color:var(--brass-bright);}
 .locked-by-strategy{opacity:0.5;pointer-events:none;filter:saturate(0.5);}
 select.locked-by-strategy{cursor:not-allowed;}
+
+/* ---------- bandeau d'installation sur l'écran d'accueil ---------- */
+.pwa-banner{
+  position:fixed;left:14px;right:14px;bottom:14px;z-index:9000;
+  display:flex;align-items:center;gap:14px;
+  background:var(--panel-raised);border:1px solid var(--hairline-bright);
+  border-left:3px solid var(--brass);border-radius:8px;
+  padding:13px 16px;box-shadow:0 8px 28px rgba(0,0,0,0.35);
+  transform:translateY(140%);opacity:0;transition:transform .28s ease,opacity .28s ease;
+  max-width:640px;margin:0 auto;
+}
+.pwa-banner.visible{transform:translateY(0);opacity:1;}
+.pwa-icon img{width:44px;height:44px;display:block;border-radius:10px;}
+.pwa-text{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0;}
+.pwa-text strong{font-size:0.9rem;color:var(--ink);font-weight:600;}
+.pwa-text span{font-size:0.76rem;color:var(--ink-faint);line-height:1.45;}
+.pwa-text b{color:var(--ink-dim);}
+.pwa-actions{display:flex;gap:8px;align-items:center;flex-shrink:0;}
+.pwa-btn{
+  background:var(--brass);border:none;color:#17130B;font-weight:600;
+  padding:8px 16px;border-radius:5px;font-size:0.8rem;cursor:pointer;transition:.12s;
+}
+.pwa-btn:hover{background:var(--brass-bright);}
+.pwa-btn-ghost{
+  background:none;border:1px solid var(--hairline-bright);color:var(--ink-faint);
+  padding:7px 13px;border-radius:5px;font-size:0.78rem;cursor:pointer;transition:.12s;
+}
+.pwa-btn-ghost:hover{color:var(--ink);border-color:var(--ink-faint);}
+@media (max-width:560px){
+  .pwa-banner{flex-wrap:wrap;gap:10px;}
+  .pwa-text{flex-basis:calc(100% - 60px);}
+  .pwa-actions{flex-basis:100%;justify-content:flex-end;}
+}

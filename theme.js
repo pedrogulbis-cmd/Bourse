@@ -30,6 +30,9 @@ function lglToggleTheme(){
     try{ localStorage.setItem(LGL_THEME_KEY, "light"); }catch(e){}
   }
   lglUpdateThemeBtnLabel();
+  // permet aux autres modules de réagir (ex. pwa.js régénère l'icône et le
+  // manifeste pour qu'ils suivent le thème choisi)
+  document.dispatchEvent(new CustomEvent("themechange"));
 }
 
 function lglUpdateThemeBtnLabel(){

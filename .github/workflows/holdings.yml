@@ -40,11 +40,10 @@ jobs:
       - name: Installer les dépendances
         run: |
           python -m pip install --upgrade pip
-          pip install -r scraper/requirements.txt
+          pip install -r requirements.txt
           pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
 
       - name: Historique — NM
-        working-directory: scraper
         env:
           SYMS: ${{ secrets.HOLDINGS_SYMBOLS_NM }}
           PASS: ${{ secrets.HOLDINGS_PASSPHRASE }}
@@ -56,7 +55,6 @@ jobs:
           python fetch_holdings_history.py --symbols "$SYMS" --suffix NM --passphrase "$PASS"
 
       - name: Historique — SM
-        working-directory: scraper
         env:
           SYMS: ${{ secrets.HOLDINGS_SYMBOLS_SM }}
           PASS: ${{ secrets.HOLDINGS_PASSPHRASE }}
@@ -69,10 +67,7 @@ jobs:
 
       - name: Committer
         run: |
-          # Les scripts écrivent dans scraper/ ; le site attend les fichiers
-          # à la racine du dépôt.
-          mv -f scraper/holdings-history*.json . 2>/dev/null || true
-
+          # Les scripts écrivent dans le dossier courant (racine du dépôt).
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add holdings-history*.json

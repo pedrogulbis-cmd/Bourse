@@ -32,14 +32,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Installer les dépendances
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Récupérer prix et fondamentaux
-        run: python run.py
-
       - name: Retirer d'éventuels snapshots restés sur la branche principale
         run: |
           # Transition depuis l'ancien fonctionnement : si des data-snapshot
@@ -57,8 +49,22 @@ jobs:
             echo "Rien à nettoyer."
           fi
 
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Récupérer prix et fondamentaux
+        run: python run.py
+
       - name: Publier sur la branche de données
         run: |
+          # Garde-fou : si run.py n'a rien produit, autant s'arrêter ici avec un
+          # message clair plutôt que d'écraser la branche data avec du vide.
+          if ! ls data-snapshot*.json >/dev/null 2>&1; then
+            echo "Aucun snapshot généré — la branche data n'est pas modifiée."
+            exit 1
+          fi
           mkdir -p /tmp/publish
           mv data-snapshot*.json /tmp/publish/
 

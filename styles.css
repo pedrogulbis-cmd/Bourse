@@ -652,3 +652,86 @@ table.holdings, table.results{ min-width:max-content; }
   /* le bandeau d'installation ne doit pas passer sous la barre d'onglets */
   .pwa-banner{ bottom:calc(70px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- tri des colonnes du screener (le clic existait déjà, mais
+   rien ne le signalait : ni curseur, ni flèche de direction) ---------- */
+table.results thead th[data-key]{ cursor:pointer; user-select:none; position:relative; }
+table.results thead th[data-key]:hover{ color:var(--brass-bright); }
+table.results thead th[data-key]::after{
+  content:"⇅"; opacity:0.25; margin-left:5px; font-size:0.85em;
+}
+table.results thead th[data-key]:hover::after{ opacity:0.6; }
+table.results thead th.sorted{ color:var(--brass-bright); }
+table.results thead th.sorted::after{ opacity:1; }
+table.results thead th.sorted.asc::after{ content:"↑"; }
+table.results thead th.sorted.desc::after{ content:"↓"; }
+
+/* ===================================================================
+   TÉLÉPHONE — positions en cartes plutôt qu'en tableau
+   Neuf colonnes ne tiennent pas sur un écran de téléphone : même avec un
+   défilement horizontal, il faut faire glisser pour lire une seule ligne.
+   Chaque position devient donc une carte autonome, où chaque valeur porte
+   son libellé (attribut data-label posé dans portfolio.js).
+   =================================================================== */
+@media (max-width:720px){
+  table.holdings{ min-width:0; display:block; }
+  table.holdings thead{ display:none; }
+  table.holdings tbody{ display:block; }
+
+  table.holdings tbody tr.holding-row{
+    display:block; position:relative;
+    background:var(--panel); border:1px solid var(--hairline-bright);
+    border-radius:7px; padding:12px 14px 10px; margin-bottom:10px;
+  }
+  table.holdings tbody tr.holding-row:nth-child(even){ background:var(--panel); }
+  table.holdings tbody tr.holding-row.expanded{ border-color:var(--brass); }
+
+  table.holdings tbody tr.holding-row td{
+    display:flex; justify-content:space-between; align-items:baseline; gap:12px;
+    padding:4px 0; border:none; text-align:right;
+  }
+  /* le libellé, repris de data-label */
+  table.holdings tbody tr.holding-row td::before{
+    content:attr(data-label);
+    font-size:0.68rem; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--ink-faint); text-align:left; flex-shrink:0;
+  }
+  /* la première cellule (nom du titre) occupe toute la largeur, en tête de carte */
+  table.holdings tbody tr.holding-row td:first-child{
+    display:block; text-align:left;
+    padding:0 0 9px; margin-bottom:6px;
+    border-bottom:1px solid var(--hairline);
+  }
+  table.holdings tbody tr.holding-row td:first-child::before{ content:none; }
+
+  /* boutons d'action : cible tactile confortable (44px recommandés) */
+  table.holdings tbody tr.holding-row td.row-actions{
+    justify-content:flex-end; gap:6px; padding-top:10px; margin-top:6px;
+    border-top:1px solid var(--hairline);
+  }
+  table.holdings tbody tr.holding-row td.row-actions::before{ content:none; }
+  .row-actions button{
+    min-width:42px; min-height:42px; font-size:1.05rem;
+    border:1px solid var(--hairline-bright); border-radius:7px;
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  .rematch-btn{ min-height:42px; padding:0 14px; }
+
+  /* ligne de détail : elle suit la carte, sans bordure de tableau */
+  table.holdings tbody tr.holding-detail-row{ display:block; margin:-8px 0 12px; }
+  table.holdings tbody tr.holding-detail-row td{ display:block; padding:0; }
+
+  /* le bandeau de plan est surtout consultatif : version compacte */
+  .plan-bar{ flex-wrap:wrap; gap:8px; padding:9px 12px; font-size:0.78rem; }
+  .plan-bar .plan-strategy{ font-size:0.7rem; padding:2px 7px; }
+  .plan-bar .plan-status{ flex-basis:100%; order:3; line-height:1.45; }
+  .plan-bar .btn-io{ margin-left:auto; padding:4px 10px; font-size:0.72rem; }
+  .plan-bar .plan-origin{ display:none; }
+}
+
+/* valeur affichée dans l'onglet de portefeuille */
+.pf-tab-value{
+  font-family:'IBM Plex Mono',monospace; font-size:0.72rem;
+  color:var(--ink-faint); margin-left:7px; white-space:nowrap;
+}
+.pf-tab.active .pf-tab-value{ color:var(--brass-bright); }

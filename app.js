@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.29.0";
+const APP_VERSION = "v7.30.0";
 
 let state = {
   strategy: "trending_value",
@@ -485,7 +485,7 @@ function renderResults(){
 
   let html = `<table class="results"><thead><tr>`;
   COLS.forEach(c=>{
-    html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted':''}">${c.label}</th>`;
+    html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted '+state.sortDir:''}" title="Cliquer pour trier">${c.label}</th>`;
   });
   html += `<th class="addcol"></th>`;
   html += `</tr></thead><tbody>`;

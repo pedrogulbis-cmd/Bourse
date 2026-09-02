@@ -859,13 +859,13 @@ function renderHoldingsTable(rows){
     const purchaseCcySuffix = r.purchaseCcy && r.purchaseCcy !== "EUR" ? ` ${r.purchaseCcy}` : " €";
     html += `<tr class="holding-row${!r.fxOk?' fx-warn':''}" data-detail-id="${r.id}">
       <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}${r.live?homeCountryBadge(r.live):''}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
-      <td class="num">${r.quantity}</td>
-      <td class="num">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
-      <td>${r.purchaseDate}</td>
-      <td class="num">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:(r.isin?`<button class="rematch-btn" data-rematch-id="${r.id}" data-rematch-isin="${r.isin}" title="Rechercher à nouveau ce titre dans le snapshot actuel">🔄 Rechercher</button>`:'—')}</td>
-      <td class="num">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>
-      <td class="num ${gainClass}">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
-      <td class="num">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
+      <td class="num" data-label="Quantité">${r.quantity}</td>
+      <td class="num" data-label="Prix d'achat">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
+      <td data-label="Date d'achat">${r.purchaseDate}</td>
+      <td class="num" data-label="Prix actuel">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:(r.isin?`<button class="rematch-btn" data-rematch-id="${r.id}" data-rematch-isin="${r.isin}" title="Rechercher à nouveau ce titre dans le snapshot actuel">🔄 Rechercher</button>`:'—')}</td>
+      <td class="num" data-label="Valeur">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>
+      <td class="num ${gainClass}" data-label="+/- value">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
+      <td class="num" data-label="Analystes">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
       <td class="row-actions">
         <button class="edit-btn" data-edit-id="${r.id}" title="Modifier cette position">✎</button>
         ${otherPortfolios.length ? `<button class="move-btn" data-move-id="${r.id}" title="Déplacer vers un autre portefeuille">⇄</button>` : ''}
@@ -1703,6 +1703,30 @@ async function importFortuneoPDF(file){
   toast(msg);
 }
 
+/** Renseigne la valeur totale (positions + cash, en euros) dans chaque
+ * onglet de portefeuille — permet de les comparer sans avoir à basculer
+ * de l'un à l'autre. Silencieuse en cas d'échec : un onglet sans montant
+ * reste utilisable. */
+async function fillSwitcherValues(portfolios){
+  let snap, fxRates;
+  try{
+    snap = await loadSnapshot();
+    fxRates = await loadFxRates();
+  }catch(e){ return; }
+
+  portfolios.forEach(p=>{
+    const el = document.querySelector(`[data-pf-value="${p.id}"]`);
+    if(!el) return;
+    try{
+      const { rows } = computeHoldingsRows(p.holdings || [], snap, fxRates);
+      const positions = rows.reduce((s,r)=> s + (r.currentValue!=null ? r.currentValue : r.costBasis), 0);
+      const cash = (p.cash || []).reduce((s,c)=> s + (toEUR(c.amount, c.currency, fxRates) || 0), 0);
+      const total = positions + cash;
+      if(total > 0) el.textContent = fmtEUR(total);
+    }catch(e){ /* portefeuille illisible : on laisse l'onglet sans montant */ }
+  });
+}
+
 function renderSwitcher(){
   const wrap = document.getElementById("pfSwitcher");
   const portfolios = pfGetPortfolios();
@@ -1711,9 +1735,15 @@ function renderSwitcher(){
   wrap.innerHTML = portfolios.map(p => `
     <div class="pf-tab ${p.id===activeId?'active':''}" data-pf-id="${p.id}">
       <span class="pf-tab-label">${p.name}</span>
+      <span class="pf-tab-value" data-pf-value="${p.id}"></span>
       <button class="pf-menu-btn" data-pf-menu="${p.id}" title="Options">⋯</button>
     </div>
   `).join('') + `<button class="pf-add-btn" id="pfAddBtn">+ Nouveau portefeuille</button>`;
+
+  // La valeur de chaque portefeuille est calculée en arrière-plan : elle
+  // demande le snapshot et les taux de change, qu'on ne veut pas attendre
+  // pour afficher les onglets eux-mêmes.
+  fillSwitcherValues(portfolios);
 
   wrap.querySelectorAll(".pf-tab").forEach(tab=>{
     tab.addEventListener("click", (e)=>{
@@ -1785,7 +1815,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.29.0";
+  if(versionEl) versionEl.textContent = "v7.30.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

@@ -841,6 +841,20 @@ function buildHoldingDetail(r){
   return gridHtml + ruleHtml;
 }
 
+/* Colonnes du tableau des positions — personnalisables (ordre/visibilité)
+   via le bouton « ⚙ Colonnes ». `fixed` empêche de masquer le titre, sans
+   quoi on ne saurait plus de quelle ligne il s'agit. */
+const HOLDINGS_COLS = [
+  {key:"name",          label:"Titre", fixed:true},
+  {key:"quantity",      label:"Qté", num:true},
+  {key:"purchasePrice", label:"Prix d'achat", num:true},
+  {key:"purchaseDate",  label:"Date d'achat"},
+  {key:"currentPrice",  label:"Prix actuel", num:true},
+  {key:"currentValue",  label:"Valeur (€)", num:true},
+  {key:"gain",          label:"+/- value (€)", num:true},
+  {key:"analyst",       label:"Analystes", num:true},
+];
+
 function renderHoldingsTable(rows){
   const wrap = document.getElementById("holdingsWrap");
   if(rows.length === 0){
@@ -848,24 +862,28 @@ function renderHoldingsTable(rows){
     return;
   }
   const otherPortfolios = pfGetPortfolios().filter(p=>p.id !== pfGetActivePortfolioId());
-  let html = `<table class="holdings"><thead><tr>
-    <th>Titre</th><th class="num">Qté</th><th class="num">Prix d'achat</th><th>Date d'achat</th>
-    <th class="num">Prix actuel</th><th class="num">Valeur (€)</th><th class="num">+/- value (€)</th><th class="num">Analystes</th><th></th>
-  </tr></thead><tbody>`;
+  const cols = applyColumnPrefs("holdings", HOLDINGS_COLS);
+  let html = `<table class="holdings"><thead><tr>` +
+    cols.map(c=>`<th class="${c.num?'num':''}">${c.label}</th>`).join('') +
+    `<th></th></tr></thead><tbody>`;
   rows.forEach(r=>{
     const cm = countryMeta(r.country);
     const gainClass = r.gain==null ? "" : (r.gain>=0 ? "pos" : "neg");
     const ccySuffix = r.currency && r.currency !== "EUR" ? ` ${r.currency}` : " €";
     const purchaseCcySuffix = r.purchaseCcy && r.purchaseCcy !== "EUR" ? ` ${r.purchaseCcy}` : " €";
+    // Cellules produites à la demande, dans l'ordre choisi (voir columns.js)
+    const cellHtml = {
+      name:     `<td data-label="Titre"><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}${r.live?homeCountryBadge(r.live):''}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>`,
+      quantity: `<td class="num" data-label="Quantité">${r.quantity}</td>`,
+      purchasePrice: `<td class="num" data-label="Prix d'achat">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>`,
+      purchaseDate: `<td data-label="Date d'achat">${r.purchaseDate}</td>`,
+      currentPrice: `<td class="num" data-label="Prix actuel">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:(r.isin?`<button class="rematch-btn" data-rematch-id="${r.id}" data-rematch-isin="${r.isin}" title="Rechercher à nouveau ce titre dans le snapshot actuel">🔄 Rechercher</button>`:'—')}</td>`,
+      currentValue: `<td class="num" data-label="Valeur">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>`,
+      gain:     `<td class="num ${gainClass}" data-label="+/- value">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>`,
+      analyst:  `<td class="num" data-label="Analystes">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>`,
+    };
     html += `<tr class="holding-row${!r.fxOk?' fx-warn':''}" data-detail-id="${r.id}">
-      <td><span class="cname">${cm?flagHTML(r.country)+' ':''}${r.name}${r.live?homeCountryBadge(r.live):''}</span><span class="tkr" style="display:block;font-family:'IBM Plex Mono',monospace;font-size:0.76rem;color:var(--ink-faint);">${r.symbol}</span></td>
-      <td class="num" data-label="Quantité">${r.quantity}</td>
-      <td class="num" data-label="Prix d'achat">${r.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})}${purchaseCcySuffix}</td>
-      <td data-label="Date d'achat">${r.purchaseDate}</td>
-      <td class="num" data-label="Prix actuel">${r.currentPrice!=null?r.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+ccySuffix:(r.isin?`<button class="rematch-btn" data-rematch-id="${r.id}" data-rematch-isin="${r.isin}" title="Rechercher à nouveau ce titre dans le snapshot actuel">🔄 Rechercher</button>`:'—')}</td>
-      <td class="num" data-label="Valeur">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>
-      <td class="num ${gainClass}" data-label="+/- value">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>
-      <td class="num" data-label="Analystes">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>
+      ${cols.map(c=>cellHtml[c.key] || '<td></td>').join('')}
       <td class="row-actions">
         <button class="edit-btn" data-edit-id="${r.id}" title="Modifier cette position">✎</button>
         ${otherPortfolios.length ? `<button class="move-btn" data-move-id="${r.id}" title="Déplacer vers un autre portefeuille">⇄</button>` : ''}
@@ -873,7 +891,7 @@ function renderHoldingsTable(rows){
       </td>
     </tr>
     <tr class="holding-detail-row detail-row" data-detail-for="${r.id}" style="display:none;">
-      <td colspan="9">${buildHoldingDetail(r)}</td>
+      <td colspan="${cols.length+1}">${buildHoldingDetail(r)}</td>
     </tr>`;
   });
   html += `</tbody></table>`;
@@ -1858,7 +1876,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.32.0";
+  if(versionEl) versionEl.textContent = "v7.33.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();
@@ -1906,6 +1924,9 @@ function init(){
   });
 
   document.getElementById("closeoutBtn").addEventListener("click", openCloseoutModal);
+  document.getElementById("holdingsColsBtn").addEventListener("click", ()=>{
+    openColumnsModal("holdings", HOLDINGS_COLS, renderPortfolio);
+  });
 
   document.getElementById("exportBtn").addEventListener("click", ()=>{
     pfDownloadExport();

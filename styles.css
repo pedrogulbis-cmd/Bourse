@@ -790,14 +790,24 @@ table.results thead th.sorted.desc::after{ content:"↓"; }
     border-top:1px solid var(--hairline);
   }
   table.results tbody tr[data-symbol] td.addcol::before{ content:none; }
+  /* La règle de base fait un petit rond de 26px (width ET height fixes,
+     border-radius:50%). Sur mobile on veut un vrai bouton pleine largeur :
+     il faut donc neutraliser explicitement height et border-radius, sinon
+     le libellé déborde d'un bouton resté minuscule. */
   td.addcol .add-btn{
-    width:100%; min-height:42px; border-radius:7px;
+    width:100%; height:auto; min-height:44px; border-radius:7px;
     display:flex; align-items:center; justify-content:center;
+    padding:11px 14px; box-sizing:border-box;
+    background:var(--panel); border:1px solid var(--brass);
     /* le bouton contient déjà "+" ou "✓" : on masque ce caractère et on
-       affiche uniquement le libellé complet, sinon les deux se chevauchent */
-    font-size:0; gap:0;
+       affiche uniquement le libellé complet, sinon les deux se superposent */
+    font-size:0; line-height:1.2; gap:0;
   }
-  td.addcol .add-btn::after{ content:"+  Ajouter au portefeuille"; font-size:0.85rem; }
+  td.addcol .add-btn::after{
+    content:"+  Ajouter au portefeuille";
+    font-size:0.85rem; font-weight:500; letter-spacing:0.01em;
+  }
+  td.addcol .add-btn.added{ border-color:var(--verdigris-bright); }
   td.addcol .add-btn.added::after{ content:"✓  Déjà en portefeuille"; font-size:0.85rem; }
 
   /* ligne de détail dépliée */
@@ -841,3 +851,14 @@ table.results thead th.sorted.desc::after{ content:"↓"; }
 }
 .col-moves button:hover:not(:disabled){ border-color:var(--brass); color:var(--brass-bright); }
 .col-moves button:disabled{ opacity:0.25; cursor:default; }
+
+/* ---------- respirations sur les cartes mobiles ----------
+   La cellule qui porte le bouton d'ajout occupe toute la largeur de la
+   carte : sans marge propre elle venait toucher les bords intérieurs. */
+@media (max-width:720px){
+  table.results tbody tr[data-symbol] td.addcol{ padding:12px 0 2px; }
+  table.holdings tbody tr.holding-row td.row-actions{ padding-top:12px; padding-bottom:2px; }
+  /* les libellés très longs ne doivent pas pousser la valeur hors cadre */
+  table.results tbody tr[data-symbol] td::before,
+  table.holdings tbody tr.holding-row td::before{ max-width:55%; }
+}

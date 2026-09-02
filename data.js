@@ -550,6 +550,17 @@ function snapshotBaseUrl(){
   return "./";
 }
 
+/* Bases à essayer, dans l'ordre : la branche de données si elle est
+   configurée, puis les fichiers déposés à côté du site. Ce repli évite un
+   site vide tant que le premier workflow n'a pas encore créé la branche —
+   et sert de filet si raw.githubusercontent est momentanément injoignable. */
+function snapshotBaseCandidates(){
+  const bases = [];
+  if(SNAPSHOT_REMOTE.repo) bases.push(snapshotBaseUrl());
+  bases.push("./");
+  return bases;
+}
+
 async function fetchWithTimeout(url, options, timeoutMs = 15000){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
@@ -566,43 +577,50 @@ async function fetchWithTimeout(url, options, timeoutMs = 15000){
 async function loadSnapshot(){
   if(snapshotCache) return snapshotCache;
 
-  const manifestUrl = snapshotBaseUrl() + "data-snapshot-manifest.json?t=" + Date.now();
+  let lastError = null;
+  for(const base of snapshotBaseCandidates()){
+    try{
+      const snap = await loadSnapshotFrom(base);
+      snapshotCache = snap;
+      return snap;
+    }catch(e){
+      lastError = e;   // on tente la base suivante
+    }
+  }
+  throw new Error(
+    "Aucun snapshot trouvé. Si l'automatisation GitHub est en place, vérifie que le workflow « Prix et fondamentaux » a bien tourné au moins une fois. Sinon, lance le scraper local et commit les fichiers à la racine du site." +
+    (lastError ? ` (dernière erreur : ${lastError.message})` : "")
+  );
+}
+
+/** Charge un snapshot depuis une base donnée (branche de données ou dossier
+ * du site) : manifeste + parties, avec repli sur l'ancien fichier unique. */
+async function loadSnapshotFrom(base){
   let manifestRes = null;
   try{
-    manifestRes = await fetchWithTimeout(manifestUrl, {cache:"no-store"}, 15000);
+    manifestRes = await fetchWithTimeout(base + "data-snapshot-manifest.json?t=" + Date.now(), {cache:"no-store"}, 15000);
   }catch(e){
-    manifestRes = null; // pas de manifeste accessible -> on tentera l'ancien format plus bas
+    manifestRes = null;
   }
 
   if(manifestRes && manifestRes.ok){
     const manifest = await manifestRes.json();
     if(!manifest || !Array.isArray(manifest.parts) || manifest.parts.length === 0){
-      throw new Error("Manifeste de snapshot invalide (data-snapshot-manifest.json sans partie listée).");
+      throw new Error("Manifeste invalide (aucune partie listée).");
     }
     const partsData = await Promise.all(manifest.parts.map(async (partFile)=>{
-      const partUrl = `${snapshotBaseUrl()}${partFile}?t=${Date.now()}`;
-      const res = await fetchWithTimeout(partUrl, {cache:"no-store"}, 25000);
-      if(!res.ok) throw new Error(`Partie de snapshot introuvable : ${partFile} (HTTP ${res.status})`);
+      const res = await fetchWithTimeout(`${base}${partFile}?t=${Date.now()}`, {cache:"no-store"}, 25000);
+      if(!res.ok) throw new Error(`Partie introuvable : ${partFile} (HTTP ${res.status})`);
       const data = await res.json();
       if(!data || !Array.isArray(data.records)) throw new Error(`Format inattendu dans ${partFile}`);
       return data.records;
     }));
-    const merged = {
-      generatedAt: manifest.generatedAt,
-      records: partsData.flat(),
-    };
-    snapshotCache = merged;
-    return merged;
+    return { generatedAt: manifest.generatedAt, records: partsData.flat() };
   }
 
-  // Repli : ancien format à fichier unique (avant le découpage en parties)
-  const legacyUrl = snapshotBaseUrl() + "data-snapshot.json?t=" + Date.now();
-  const res = await fetchWithTimeout(legacyUrl, {cache:"no-store"}, 15000);
-  if(!res.ok){
-    throw new Error("Aucun snapshot trouvé (ni data-snapshot-manifest.json, ni data-snapshot.json) — lance d'abord le scraper local (voir scraper/README.md) puis commit les fichiers générés à la racine du site.");
-  }
+  const res = await fetchWithTimeout(base + "data-snapshot.json?t=" + Date.now(), {cache:"no-store"}, 15000);
+  if(!res.ok) throw new Error(`Aucun snapshot à cette adresse (HTTP ${res.status})`);
   const json = await res.json();
   if(!json || !Array.isArray(json.records)) throw new Error("Format de snapshot inattendu.");
-  snapshotCache = json;
   return json;
 }

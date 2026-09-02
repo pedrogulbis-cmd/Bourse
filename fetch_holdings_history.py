@@ -132,7 +132,9 @@ def update_index(suffix, index_path=INDEX_PATH, site_base_url=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", type=str, required=True, help="Fichier JSON exporté depuis la page Portefeuille.")
+    ap.add_argument("--input", type=str, default=None, help="Fichier JSON exporté depuis la page Portefeuille.")
+    ap.add_argument("--symbols", type=str, default=None,
+                     help="Liste de symboles séparés par des virgules (ex. \"EURONEXT:MC,OSL:HAUTO\"), au lieu d'un fichier d'export. Utilisé par l'automatisation GitHub Actions, qui n'a pas accès au portefeuille stocké dans le navigateur.")
     ap.add_argument("--bars", type=int, default=1500, help="Nombre de barres quotidiennes par titre (max 5000, ~6 ans).")
     ap.add_argument("--suffix", type=str, default=None,
                      help="Identifiant personnel (ex. ton prénom) si plusieurs personnes partagent ce site — voir docstring en haut du fichier.")
@@ -144,23 +146,30 @@ def main():
                      help="Mot de passe pour --encrypt, fourni directement (déconseillé : reste dans l'historique de ta console/terminal) plutôt que saisi de façon masquée.")
     args = ap.parse_args()
 
-    with open(args.input, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    if not args.input and not args.symbols:
+        ap.error("Fournis soit --input (fichier d'export), soit --symbols (liste directe).")
 
-    # Le format d'export a changé avec l'arrivée des portefeuilles multiples :
-    # les positions sont maintenant nichées dans data["portfolios"][i]["holdings"]
-    # plutôt qu'à la racine. On gère les deux formats pour rester compatible
-    # avec d'anciens exports.
-    if isinstance(data.get("portfolios"), list):
-        holdings = [h for p in data["portfolios"] for h in p.get("holdings", [])]
+    if args.symbols:
+        symbols = sorted({s.strip() for s in args.symbols.split(",") if s.strip()})
+        holdings = None
     else:
-        holdings = data.get("holdings", [])
+        with open(args.input, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-    if not holdings:
-        print("Aucune position trouvée dans le fichier exporté.")
-        return
+        # Le format d'export a changé avec l'arrivée des portefeuilles multiples :
+        # les positions sont maintenant nichées dans data["portfolios"][i]["holdings"]
+        # plutôt qu'à la racine. On gère les deux formats pour rester compatible
+        # avec d'anciens exports.
+        if isinstance(data.get("portfolios"), list):
+            holdings = [h for p in data["portfolios"] for h in p.get("holdings", [])]
+        else:
+            holdings = data.get("holdings", [])
 
-    symbols = sorted({h["symbol"] for h in holdings if h.get("symbol")})
+        if not holdings:
+            print("Aucune position trouvée dans le fichier exporté.")
+            return
+
+        symbols = sorted({h["symbol"] for h in holdings if h.get("symbol")})
     print(f"— {len(symbols)} titre(s) unique(s) à récupérer : {', '.join(symbols)}")
 
     tv = TvDatafeed()

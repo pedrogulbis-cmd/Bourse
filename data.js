@@ -532,6 +532,24 @@ const STRATEGY_ORDER = ["trending_value","deep_value","cheap_on_mend","all_stock
 
 let snapshotCache = null;
 
+/* Les snapshots de prix sont publiés par GitHub Actions sur une branche
+   dédiée (voir .github/workflows/prices.yml) plutôt que sur la branche du
+   site : ils pèsent plusieurs dizaines de Mo et sont régénérés trois fois
+   par jour, ce qui ferait grossir l'historique Git indéfiniment.
+   Renseigne ici ton dépôt pour activer ce mode ; laisse à null pour lire
+   les fichiers déposés à côté du site, comme avant. */
+const SNAPSHOT_REMOTE = {
+  repo: "pedrogulbis-cmd/Bourse",  // mets null pour revenir aux fichiers déposés à côté du site
+  branch: "data",
+};
+
+function snapshotBaseUrl(){
+  if(SNAPSHOT_REMOTE.repo){
+    return `https://raw.githubusercontent.com/${SNAPSHOT_REMOTE.repo}/${SNAPSHOT_REMOTE.branch}/`;
+  }
+  return "./";
+}
+
 async function fetchWithTimeout(url, options, timeoutMs = 15000){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
@@ -548,7 +566,7 @@ async function fetchWithTimeout(url, options, timeoutMs = 15000){
 async function loadSnapshot(){
   if(snapshotCache) return snapshotCache;
 
-  const manifestUrl = "./data-snapshot-manifest.json?t=" + Date.now();
+  const manifestUrl = snapshotBaseUrl() + "data-snapshot-manifest.json?t=" + Date.now();
   let manifestRes = null;
   try{
     manifestRes = await fetchWithTimeout(manifestUrl, {cache:"no-store"}, 15000);
@@ -562,7 +580,7 @@ async function loadSnapshot(){
       throw new Error("Manifeste de snapshot invalide (data-snapshot-manifest.json sans partie listée).");
     }
     const partsData = await Promise.all(manifest.parts.map(async (partFile)=>{
-      const partUrl = `./${partFile}?t=${Date.now()}`;
+      const partUrl = `${snapshotBaseUrl()}${partFile}?t=${Date.now()}`;
       const res = await fetchWithTimeout(partUrl, {cache:"no-store"}, 25000);
       if(!res.ok) throw new Error(`Partie de snapshot introuvable : ${partFile} (HTTP ${res.status})`);
       const data = await res.json();
@@ -578,7 +596,7 @@ async function loadSnapshot(){
   }
 
   // Repli : ancien format à fichier unique (avant le découpage en parties)
-  const legacyUrl = "./data-snapshot.json?t=" + Date.now();
+  const legacyUrl = snapshotBaseUrl() + "data-snapshot.json?t=" + Date.now();
   const res = await fetchWithTimeout(legacyUrl, {cache:"no-store"}, 15000);
   if(!res.ok){
     throw new Error("Aucun snapshot trouvé (ni data-snapshot-manifest.json, ni data-snapshot.json) — lance d'abord le scraper local (voir scraper/README.md) puis commit les fichiers générés à la racine du site.");

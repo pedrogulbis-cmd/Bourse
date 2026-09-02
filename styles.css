@@ -603,3 +603,52 @@ select.locked-by-strategy{cursor:not-allowed;}
   .pwa-text{flex-basis:calc(100% - 60px);}
   .pwa-actions{flex-basis:100%;justify-content:flex-end;}
 }
+
+/* ===================================================================
+   MOBILE — débordement horizontal
+   Les tableaux (9 colonnes) sont plus larges que l'écran d'un téléphone.
+   Sans conteneur scrollable, c'est la PAGE ENTIÈRE qui défile
+   latéralement, laissant apparaître une bande vide à droite. On isole
+   donc le défilement dans le tableau lui-même.
+   =================================================================== */
+#holdingsWrap, #closuresWrap, #byStrategyWrap, #resultsWrap, .table-scroll{
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  max-width:100%;
+}
+html, body{ overflow-x:hidden; max-width:100%; }
+.wrap{ max-width:min(1180px, 100%); }
+table.holdings, table.results{ min-width:max-content; }
+
+/* ===================================================================
+   MODE APPLICATION — navigation en bas
+   Installée sur l'écran d'accueil, l'application n'a plus la barre
+   d'adresse du navigateur : les onglets en haut de page deviennent
+   difficiles à atteindre au pouce. On les bascule en bas, comme dans une
+   application native. Uniquement en mode autonome et sur petit écran :
+   sur ordinateur la navigation reste en haut.
+   =================================================================== */
+@media (display-mode: standalone) and (max-width:860px){
+  .page-nav{
+    position:fixed; left:0; right:0; bottom:0; z-index:8000;
+    display:grid; grid-template-columns:repeat(4,1fr); gap:0;
+    margin:0; padding:0 0 env(safe-area-inset-bottom);
+    background:color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border-top:1px solid var(--hairline-bright);
+    border-bottom:none;
+  }
+  .page-nav-item{
+    padding:11px 2px 10px; text-align:center; font-size:0.72rem;
+    border:none; border-top:2px solid transparent; margin:0; border-radius:0;
+    letter-spacing:0.01em;
+  }
+  .page-nav-item.active{
+    border-top-color:var(--brass); color:var(--brass-bright);
+    background:transparent;
+  }
+  /* la barre flotte au-dessus du contenu : on réserve la place en bas */
+  .wrap{ padding-bottom:calc(76px + env(safe-area-inset-bottom)); }
+  /* le bandeau d'installation ne doit pas passer sous la barre d'onglets */
+  .pwa-banner{ bottom:calc(70px + env(safe-area-inset-bottom)); }
+}

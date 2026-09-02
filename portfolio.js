@@ -1167,7 +1167,14 @@ async function renderChart(){
   }
 
   if(!startInput.value){
-    if(history.length) startInput.value = history[0].date;
+    // Priorité à la date d'achat dominante : c'est la période réellement
+    // pertinente ("depuis que je détiens ce panier"), et elle est couverte
+    // par l'historique de prix réel. Le premier point du suivi local ne
+    // reflète que le jour où la page a été ouverte pour la première fois,
+    // ce qui n'a pas de sens comme point de départ.
+    const purchase = dominantPurchaseDate();
+    if(purchase) startInput.value = purchase;
+    else if(history.length) startInput.value = history[0].date;
     else {
       const d = new Date(); d.setFullYear(d.getFullYear()-1);
       startInput.value = d.toISOString().slice(0,10);
@@ -1261,9 +1268,17 @@ async function renderChart(){
   if(labels.length < 2){
     canvas.style.display = "none";
     emptyMsg.style.display = "block";
-    emptyMsg.textContent = (history.length===0 && benchmarkKeys.length===0)
-      ? "Ajoute des positions et/ou coche un indice de comparaison ci-dessus pour voir un graphique."
-      : "Rien à afficher sur cette période — élargis la plage de dates ou coche un indice.";
+    const today = new Date().toISOString().slice(0,10);
+    const daysSpan = Math.round((new Date(today) - new Date(startDate)) / 86400000);
+    if(history.length===0 && benchmarkKeys.length===0){
+      emptyMsg.textContent = "Ajoute des positions et/ou coche un indice de comparaison ci-dessus pour voir un graphique.";
+    } else if(daysSpan >= 0 && daysSpan < 3){
+      // Cas le plus fréquent : une date de départ trop proche d'aujourd'hui.
+      // Une courbe a besoin d'au moins deux points de cotation.
+      emptyMsg.textContent = `Période trop courte : il n'y a qu'un ou deux jours de cotation depuis le ${startDate}. Recule la date de départ, ou utilise le bouton « Depuis achat ».`;
+    } else {
+      emptyMsg.textContent = "Rien à afficher sur cette période — élargis la plage de dates ou coche un indice.";
+    }
     if(chartInstance){ chartInstance.destroy(); chartInstance = null; }
     return;
   }
@@ -1770,7 +1785,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.28.0";
+  if(versionEl) versionEl.textContent = "v7.29.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

@@ -735,3 +735,69 @@ table.results thead th.sorted.desc::after{ content:"↓"; }
   color:var(--ink-faint); margin-left:7px; white-space:nowrap;
 }
 .pf-tab.active .pf-tab-value{ color:var(--brass-bright); }
+
+/* ===================================================================
+   TÉLÉPHONE — screener et recherche en cartes
+   Même problème que les positions : 8 à 13 colonnes ne tiennent pas sur
+   un téléphone, et le bouton "+" (dernière colonne) se retrouvait hors
+   écran — impossible d'ajouter un titre au portefeuille depuis mobile.
+   Chaque résultat devient une carte, avec un bouton d'ajout pleine
+   largeur en bas.
+   =================================================================== */
+@media (max-width:720px){
+  table.results{ min-width:0; display:block; }
+  table.results thead{ display:none; }
+  table.results tbody{ display:block; }
+
+  table.results tbody tr[data-symbol]{
+    display:block; position:relative;
+    background:var(--panel); border:1px solid var(--hairline-bright);
+    border-radius:7px; padding:12px 14px 12px; margin-bottom:10px;
+  }
+  table.results tbody tr[data-symbol]:nth-child(even){ background:var(--panel); }
+  table.results tbody tr[data-symbol].has-warn{ border-left:3px solid var(--oxide-bright); }
+  table.results tbody tr[data-symbol].has-held{ border-left:3px solid var(--verdigris-bright); }
+
+  table.results tbody tr[data-symbol] td{
+    display:flex; justify-content:space-between; align-items:baseline; gap:12px;
+    padding:4px 0; border:none; text-align:right; white-space:normal;
+  }
+  table.results tbody tr[data-symbol] td::before{
+    content:attr(data-label);
+    font-size:0.68rem; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--ink-faint); text-align:left; flex-shrink:0;
+  }
+
+  /* nom du titre : en-tête de carte, pleine largeur */
+  table.results tbody tr[data-symbol] td.name{
+    display:block; text-align:left;
+    padding:0 0 9px; margin-bottom:6px;
+    border-bottom:1px solid var(--hairline);
+  }
+  table.results tbody tr[data-symbol] td.name::before{ content:none; }
+
+  /* rang : petite pastille en haut à droite plutôt qu'une ligne */
+  table.results tbody tr[data-symbol] td.rank{
+    position:absolute; top:10px; right:12px;
+    padding:0; display:block; font-size:0.72rem; color:var(--ink-faint);
+  }
+  table.results tbody tr[data-symbol] td.rank::before{ content:"#"; margin:0; }
+  table.results tbody tr[data-symbol] td.name{ padding-right:44px; }
+
+  /* bouton d'ajout : pleine largeur, cible tactile confortable */
+  table.results tbody tr[data-symbol] td.addcol{
+    display:block; padding:11px 0 0; margin-top:8px;
+    border-top:1px solid var(--hairline);
+  }
+  table.results tbody tr[data-symbol] td.addcol::before{ content:none; }
+  td.addcol .add-btn{
+    width:100%; min-height:42px; border-radius:7px; font-size:0.85rem;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+  }
+  td.addcol .add-btn::after{ content:"Ajouter au portefeuille"; }
+  td.addcol .add-btn.added::after{ content:"Déjà en portefeuille"; }
+
+  /* ligne de détail dépliée */
+  table.results tbody tr.detail-row{ display:block; margin:-8px 0 12px; }
+  table.results tbody tr.detail-row td{ display:block; padding:0; }
+}

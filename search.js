@@ -73,12 +73,12 @@ function renderResults(matches, query){
     const cm = countryMeta(s.country);
     html += `<tr data-symbol="${s.symbol}">
       <td class="name"><span class="cname">${cm?flagHTML(s.country)+' ':''}${s.name}</span><span class="tkr">${s.symbol}</span>${s.isin?`<span class="isin">${s.isin}</span>`:''}</td>
-      <td class="num">${s.price!=null?s.price.toLocaleString('fr-FR',{maximumFractionDigits:2}):'—'}</td>
-      <td class="num">${fmtMcap(s.mcap)}</td>
-      <td class="num">${fmtNum(s.pe)}</td>
-      <td class="num ${s.mom6>=0?'pos':'neg'}">${fmtPct(s.mom6!=null?s.mom6/100:null)}</td>
-      <td class="num">${analystBadgeHTML(s.analystLabel)}</td>
-      <td class="num">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>
+      <td class="num" data-label="Prix">${s.price!=null?s.price.toLocaleString('fr-FR',{maximumFractionDigits:2}):'—'}</td>
+      <td class="num" data-label="Capitalisation">${fmtMcap(s.mcap)}</td>
+      <td class="num" data-label="P/E">${fmtNum(s.pe)}</td>
+      <td class="num ${s.mom6>=0?'pos':'neg'}" data-label="Momentum 6M">${fmtPct(s.mom6!=null?s.mom6/100:null)}</td>
+      <td class="num" data-label="Analystes">${analystBadgeHTML(s.analystLabel)}</td>
+      <td class="num" data-label="Pays">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>
       <td class="addcol">${renderAddBtn(s)}</td>
     </tr>`;
   });
@@ -183,7 +183,7 @@ function doSearch(){
 let debounceTimer = null;
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.30.0";
+  if(versionEl) versionEl.textContent = "v7.31.0";
 
   const statusEl = document.getElementById("searchStatus");
   statusEl.textContent = "Chargement de l'univers…";

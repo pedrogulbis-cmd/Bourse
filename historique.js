@@ -244,7 +244,7 @@ function renderAll(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.34.0";
+  if(versionEl) versionEl.textContent = "v7.35.0";
   renderAll();
   document.getElementById("filterPortfolio").addEventListener("change", renderAll);
   document.getElementById("filterStrategy").addEventListener("change", renderAll);

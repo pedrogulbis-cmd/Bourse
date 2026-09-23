@@ -20,9 +20,9 @@ function pwaDrawIcon(size, maskable){
   const x = c.getContext("2d");
 
   const dark = document.documentElement.getAttribute("data-theme") !== "light";
-  const bg = dark ? "#0F1512" : "#F7F4EC";
-  const brass = "#C08A3E";
-  const brassBright = "#E0AC5C";
+  const bg = dark ? "#0d0d10" : "#ffffff";
+  const brass = "#2C3AE0";
+  const brassBright = "#5A67F0";
   const verdigris = "#5B8A7A";
 
   // marge de sécurité pour les icônes "maskable" (le système peut rogner
@@ -105,8 +105,8 @@ function pwaUpdateManifest(){
       display: "standalone",
       orientation: "portrait",
       lang: "fr",
-      background_color: dark ? "#0F1512" : "#F7F4EC",
-      theme_color: dark ? "#0F1512" : "#F7F4EC",
+      background_color: dark ? "#0d0d10" : "#ffffff",
+      theme_color: dark ? "#0d0d10" : "#ffffff",
       icons: [
         { src: i192, sizes: "192x192", type: "image/png" },
         { src: i512, sizes: "512x512", type: "image/png" },

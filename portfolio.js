@@ -1296,7 +1296,7 @@ function renderAllocation(rows){
     <div class="allocation-card"><h4>Par devise</h4><div class="chart-holder"><canvas id="allocCurrency"></canvas></div><div class="allocation-legend" id="legendCurrency"></div></div>
   `;
 
-  const palette = ["#C9A24B","#5B8A7A","#8B7CB6","#C9704B","#4F8FBF","#D0A5B0","#8FA85E","#A98CC9","#6FB0A8","#C97D8F","#9FA0C9","#B8935E"];
+  const palette = ["#2C3AE0","#5B8A7A","#8B7CB6","#C9704B","#4F8FBF","#D0A5B0","#8FA85E","#A98CC9","#6FB0A8","#C97D8F","#9FA0C9","#B8935E"];
   const panelColor = getComputedStyle(document.documentElement).getPropertyValue('--panel').trim() || "#161F1A";
 
   const drawDoughnut = (canvasId, legendId, data) => {
@@ -1514,8 +1514,8 @@ async function renderChart(){
     datasets.push({
       label: "Portefeuille actuel (base 100, valorisé rétroactivement)",
       data: pfIndexed,
-      borderColor: "#C9A24B",
-      backgroundColor: "rgba(201,162,75,0.08)",
+      borderColor: "#2C3AE0",
+      backgroundColor: "rgba(44,58,224,0.07)",
       fill: true,
       tension: 0.15,
       pointRadius: 2,
@@ -1528,7 +1528,7 @@ async function renderChart(){
           const p = findPf(d);
           return p ? (base>0 ? p.totalWithDiv/base*100 : 100) : null;
         }),
-        borderColor: "#8C6D1F",
+        borderColor: "#0B6B45",
         backgroundColor: "transparent",
         borderWidth: 2,
         tension: 0.15,
@@ -1553,8 +1553,8 @@ async function renderChart(){
     datasets.push({
       label: "Portefeuille (base 100)",
       data: pfIndexed,
-      borderColor: "#C9A24B",
-      backgroundColor: "rgba(201,162,75,0.08)",
+      borderColor: "#2C3AE0",
+      backgroundColor: "rgba(44,58,224,0.07)",
       fill: true,
       tension: 0.15,
       pointRadius: 3,
@@ -1600,10 +1600,10 @@ async function renderChart(){
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: "#B8B3A1" } } },
+      plugins: { legend: { labels: { color: "#8a8a93" } } },
       scales: {
-        x: { ticks: { color: "#8C8878" }, grid: { color: "rgba(232,227,211,0.06)" } },
-        y: { ticks: { color: "#8C8878" }, grid: { color: "rgba(232,227,211,0.06)" } },
+        x: { ticks: { color: "#8a8a93" }, grid: { color: "rgba(128,128,140,0.15)" } },
+        y: { ticks: { color: "#8a8a93" }, grid: { color: "rgba(128,128,140,0.15)" } },
       },
     },
   });
@@ -2072,7 +2072,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.34.0";
+  if(versionEl) versionEl.textContent = "v7.35.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

@@ -140,22 +140,39 @@ async function loadHoldingsHistorySuffixes(){
   }
 }
 
-async function loadHoldingsHistory(){
-  try{
-    const suffix = getHoldingsHistorySuffix();
-    const filename = suffix ? `holdings-history-${suffix}.json` : "holdings-history.json";
-    const url = `./${filename}?t=` + Date.now();
-    const res = await fetchWithTimeout(url, {cache:"no-store"}, 10000);
-    if(!res.ok) return null;
-    const json = await res.json();
-    if(json && json.encrypted){
-      const decrypted = await decryptHoldingsWithPrompt(json);
-      return decrypted && decrypted.prices ? decrypted.prices : null;
-    }
-    return json && json.prices ? json.prices : null;
-  }catch(e){
-    return null;
+/* Contenu du fichier holdings-history (prix + historique des dividendes),
+   gardé en mémoire le temps de la page : le tableau ET le graphique en ont
+   besoin, inutile de le télécharger (et de le déchiffrer) deux fois. */
+const holdingsPayloadCache = {};
+
+async function loadHoldingsPayload(){
+  const suffix = getHoldingsHistorySuffix();
+  const filename = suffix ? `holdings-history-${suffix}.json` : "holdings-history.json";
+  if(!holdingsPayloadCache[filename]){
+    holdingsPayloadCache[filename] = (async ()=>{
+      try{
+        const res = await fetchWithTimeout(`./${filename}?t=` + Date.now(), {cache:"no-store"}, 10000);
+        if(!res.ok) return null;
+        const json = await res.json();
+        return json && json.encrypted ? await decryptHoldingsWithPrompt(json) : json;
+      }catch(e){
+        return null;
+      }
+    })();
   }
+  return holdingsPayloadCache[filename];
+}
+
+async function loadHoldingsHistory(){
+  const payload = await loadHoldingsPayload();
+  return payload && payload.prices ? payload.prices : null;
+}
+
+/** Historique des dividendes par symbole : {symbol: {currency, events:[{date, amount}]}}
+ * (montants BRUTS par action, date = date de détachement). */
+async function loadDividendHistory(){
+  const payload = await loadHoldingsPayload();
+  return payload && payload.dividends ? payload.dividends : null;
 }
 
 async function loadFxRates(){
@@ -216,14 +233,17 @@ function fmtDateFR(iso){
  * sont par action, dans la devise de cotation — multipliés par la quantité
  * détenue puis convertis en euros.
  *
- * « Dernier dividende perçu » : on considère qu'il t'a été versé si tu
- * détenais le titre AVANT sa date de détachement (règle réelle : il faut
- * posséder l'action la veille de l'ex-date). TradingView ne fournit que le
- * dernier versement, pas l'historique complet — les dividendes plus
- * anciens ne sont pas comptés.
+ * Dividendes perçus depuis l'achat : tous les versements dont la date de
+ * détachement tombe APRÈS la date d'achat (il faut détenir l'action la
+ * veille de l'ex-date) et au plus tard aujourd'hui, × quantité actuelle.
+ * Montants BRUTS (avant prélèvements). Source : `hist`, l'historique Yahoo
+ * publié dans holdings-history-*.json par fetch_holdings_history.py. S'il
+ * manque pour ce titre, repli sur le seul dernier versement connu du
+ * snapshot TradingView (estimation partielle, signalée par `estimated`).
  */
-function computeDividendInfo(h, live, currency, fxRates){
-  if(!live) return null;
+function computeDividendInfo(h, live, currency, fxRates, hist){
+  if(!live && !hist) return null;
+  live = live || {};
   const today = new Date().toISOString().slice(0,10);
   const total = amt => amt!=null ? toEUR(h.quantity * amt, currency, fxRates) : null;
 
@@ -246,8 +266,21 @@ function computeDividendInfo(h, live, currency, fxRates){
              totalEUR: total(live.divAmountLast), received };
   }
 
+  let received = [], receivedEUR = 0, estimated = false;
+  if(hist && Array.isArray(hist.events)){
+    const histCcy = hist.currency || currency;
+    received = hist.events
+      .filter(e=> (!h.purchaseDate || e.date > h.purchaseDate) && e.date <= today)
+      .map(e=>({ date: e.date, perShare: e.amount, currency: histCcy, totalEUR: toEUR(h.quantity * e.amount, histCcy, fxRates) }));
+    receivedEUR = received.reduce((s,e)=>s+(e.totalEUR||0), 0);
+  } else if(last && last.received){
+    received = [{ date: last.exDate, perShare: last.perShare, currency, totalEUR: last.totalEUR }];
+    receivedEUR = last.totalEUR || 0;
+    estimated = true;
+  }
+
   const annualEUR = live.divPerShareFy!=null ? total(live.divPerShareFy) : null;
-  return { next, last, annualEUR, perShareFy: live.divPerShareFy ?? null };
+  return { next, last, annualEUR, perShareFy: live.divPerShareFy ?? null, received, receivedEUR, estimated };
 }
 
 /**
@@ -256,7 +289,7 @@ function computeDividendInfo(h, live, currency, fxRates){
  * par l'affichage normal ET par le calcul de clôture (même logique de
  * conversion de devise, pas de duplication).
  */
-function computeHoldingsRows(holdings, snap, fxRates){
+function computeHoldingsRows(holdings, snap, fxRates, divHistory){
   const missingFx = new Set();
   const bySymbol = {};
   snap.records.forEach(r=> bySymbol[r.symbol]=r );
@@ -275,8 +308,11 @@ function computeHoldingsRows(holdings, snap, fxRates){
     const gain = currentValue!=null ? currentValue - costBasis : null;
     const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
     const fxOk = fxRateAvailable(currency, fxRates) && fxRateAvailable(purchaseCcy, fxRates);
-    const div = computeDividendInfo(h, live, currency, fxRates);
-    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk, div };
+    const div = computeDividendInfo(h, live, currency, fxRates, divHistory ? divHistory[h.symbol] : null);
+    const divReceived = div ? div.receivedEUR : 0;
+    const totalReturn = gain!=null ? gain + divReceived : null;
+    const totalReturnPct = (totalReturn!=null && costBasis>0) ? (totalReturn/costBasis*100) : null;
+    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk, div, divReceived, totalReturn, totalReturnPct };
   });
 
   return { rows, missingFx };
@@ -292,7 +328,8 @@ async function renderPortfolio(){
     return;
   }
   const fxRates = await loadFxRates();
-  const { rows, missingFx } = computeHoldingsRows(holdings, snap, fxRates);
+  const divHistory = holdings.length ? await loadDividendHistory() : null;
+  const { rows, missingFx } = computeHoldingsRows(holdings, snap, fxRates, divHistory);
 
   if(missingFx.size){
     toast(`Taux de change manquant pour : ${[...missingFx].join(', ')} — fx-rates.json absent ou incomplet. Ces positions sont additionnées sans conversion (totaux inexacts). Lance fetch_fx_rates.py.`);
@@ -325,9 +362,9 @@ async function renderPortfolio(){
     .filter(r=>r.div && r.div.next && r.div.next.eligible && (r.div.next.payDate || r.div.next.exDate))
     .map(r=>({ name: r.name, date: r.div.next.payDate || r.div.next.exDate, amount: r.div.next.totalEUR }))
     .sort((a,b)=>a.date.localeCompare(b.date));
-  const lastReceived = rows.reduce((s,r)=> s + (r.div && r.div.last && r.div.last.received ? (r.div.last.totalEUR||0) : 0), 0);
+  const totalDivReceived = rows.reduce((s,r)=> s + (r.divReceived||0), 0);
 
-  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome, totalCash, upcoming[0] || null, lastReceived);
+  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome, totalCash, upcoming[0] || null, totalDivReceived);
   renderHoldingsTable(rows);
   renderCash(cashRows);
   renderAllocation(rows);
@@ -342,7 +379,7 @@ async function renderPortfolio(){
   await renderChart();
 }
 
-function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome, totalCash, nextDividend, lastReceived){
+function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome, totalCash, nextDividend, divReceived){
   const el = document.getElementById("pfSummary");
   const grandTotal = totalValue + (totalCash||0);
   if(nPositions === 0 && !totalCash){
@@ -351,6 +388,8 @@ function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPosition
   }
   const gainClass = totalGain>=0 ? "pos" : "neg";
   const yieldOnCost = totalCost>0 ? (dividendIncome/totalCost*100) : null;
+  const totalReturn = totalGain + (divReceived||0);
+  const totalReturnPct = totalCost>0 ? (totalReturn/totalCost*100) : null;
   el.innerHTML = `
     <div class="card"><div class="lbl">Positions</div><div class="val">${nPositions}</div></div>
     <div class="card"><div class="lbl">Investi</div><div class="val">${fmtEUR(totalCost)}</div></div>
@@ -361,9 +400,14 @@ function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPosition
     </div>
     <div class="card"><div class="lbl">Plus/moins-value</div><div class="val ${gainClass}">${fmtEUR(totalGain)} (${fmtPctSigned(totalGainPct)})</div></div>
     <div class="card">
+      <div class="lbl">Rendement total (dividendes bruts inclus)</div>
+      <div class="val ${totalReturn>=0?'pos':'neg'}">${fmtEUR(totalReturn)} (${fmtPctSigned(totalReturnPct)})</div>
+      <div class="sub-breakdown"><span>Plus-value ${fmtEUR(totalGain)}</span><span>Dividendes perçus ${fmtEUR(divReceived||0)}</span></div>
+    </div>
+    <div class="card">
       <div class="lbl">Dividendes attendus (12M)</div>
       <div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div>
-      ${nextDividend || lastReceived ? `<div class="sub-breakdown">${nextDividend ? `<span>Prochain : ${nextDividend.amount!=null?fmtEUR(nextDividend.amount)+' — ':''}${nextDividend.name}, le ${fmtDateFR(nextDividend.date)}</span>` : ''}${lastReceived ? `<span>Derniers perçus : ${fmtEUR(lastReceived)}</span>` : ''}</div>` : ''}
+      ${nextDividend || divReceived ? `<div class="sub-breakdown">${nextDividend ? `<span>Prochain : ${nextDividend.amount!=null?fmtEUR(nextDividend.amount)+' — ':''}${nextDividend.name}, le ${fmtDateFR(nextDividend.date)}</span>` : ''}${divReceived ? `<span>Perçus depuis l'achat : ${fmtEUR(divReceived)}</span>` : ''}</div>` : ''}
     </div>
   `;
 }
@@ -663,11 +707,14 @@ async function openCloseoutModal(){
     toast("Impossible de charger les prix actuels : " + e.message);
     return;
   }
-  const { rows } = computeHoldingsRows(holdings, snap, fxRates);
+  const { rows } = computeHoldingsRows(holdings, snap, fxRates, await loadDividendHistory());
   const totalCostBasis = rows.reduce((s,r)=>s+r.costBasis, 0);
   const totalValue = rows.reduce((s,r)=>s + (r.currentValue!=null ? r.currentValue : r.costBasis), 0);
   const realizedGain = totalValue - totalCostBasis;
   const realizedGainPct = totalCostBasis>0 ? (realizedGain/totalCostBasis*100) : null;
+  const dividendsReceived = rows.reduce((s,r)=>s+(r.divReceived||0), 0);
+  const totalReturn = realizedGain + dividendsReceived;
+  const totalReturnPct = totalCostBasis>0 ? (totalReturn/totalCostBasis*100) : null;
 
   const today = new Date().toISOString().slice(0,10);
   // Pré-sélectionne la méthode du plan de sortie s'il en existe un — évite
@@ -698,6 +745,8 @@ async function openCloseoutModal(){
           <div class="row"><span>Investi</span><span>${fmtEUR(totalCostBasis)}</span></div>
           <div class="row"><span>Valeur actuelle</span><span>${fmtEUR(totalValue)}</span></div>
           <div class="row ${realizedGain>=0?'pos':'neg'}"><span>Plus/moins-value réalisée</span><span>${fmtEUR(realizedGain)} (${fmtPctSigned(realizedGainPct)})</span></div>
+          <div class="row"><span>Dividendes perçus (brut)</span><span>${fmtEUR(dividendsReceived)}</span></div>
+          <div class="row ${totalReturn>=0?'pos':'neg'}"><span>Rendement total</span><span>${fmtEUR(totalReturn)} (${fmtPctSigned(totalReturnPct)})</span></div>
         </div>
       </div>
       <div class="modal-actions">
@@ -727,6 +776,9 @@ async function openCloseoutModal(){
       totalValue,
       realizedGain,
       realizedGainPct,
+      dividendsReceived,
+      totalReturn,
+      totalReturnPct,
       positions: rows.map(r => ({
         symbol: r.symbol,
         name: r.name,
@@ -739,6 +791,7 @@ async function openCloseoutModal(){
         currentValue: r.currentValue,
         gain: r.gain,
         gainPct: r.gainPct,
+        dividendsReceived: r.divReceived,
       })),
     }, portfolioId);
     pfClearHoldings(portfolioId);
@@ -846,13 +899,19 @@ function buildHoldingDetail(r){
         ["Prochain dividende / action", d.next ? perShare(d.next.perShare) : "—"],
         ["Prochain dividende (ta position)", d.next && d.next.totalEUR!=null ? fmtEUR(d.next.totalEUR) + (d.next.eligible?"":" (non éligible)") : "—"],
         ["Dernier dividende / action", d.last ? `${perShare(d.last.perShare)} (payé le ${fmtDateFR(d.last.payDate)})` : "—"],
-        ["Dernier dividende perçu", d.last ? (d.last.received ? fmtEUR(d.last.totalEUR) : "non (acheté après le détachement)") : "—"],
         ["Dividende annuel / action (dernier exercice)", perShare(d.perShareFy)],
+        ["Dividendes perçus depuis l'achat (brut)", d.received.length ? fmtEUR(d.receivedEUR) : "aucun"],
+        ["Rendement total (dividendes inclus)", r.totalReturn!=null ? `${fmtEUR(r.totalReturn)} (${fmtPctSigned(r.totalReturnPct)})` : "—"],
       );
     }
     gridHtml = `<div class="detail-grid">` +
       items.map(([k,v])=>`<div class="detail-item"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') +
       `</div>`;
+    if(d && d.received.length){
+      gridHtml += `<div class="detail-note" style="margin-top:10px;"><strong>Dividendes perçus</strong> (date de détachement · brut par action · pour ${r.quantity} action${r.quantity>1?'s':''})${d.estimated?' — historique complet pas encore disponible, dernier versement seul':''}<br>` +
+        [...d.received].reverse().map(e=>`${fmtDateFR(e.date)} · ${n(e.perShare,4)} ${e.currency==='EUR'?'€':e.currency} · ${fmtEUR(e.totalEUR)}`).join('<br>') +
+        `</div>`;
+    }
   } else {
     gridHtml = `<div class="detail-note">Pas de données de marché pour ce titre (non retrouvé dans le snapshot). Utilise « 🔄 Rechercher » après avoir relancé le scraper.</div>`;
   }
@@ -930,6 +989,8 @@ const HOLDINGS_COLS = [
   {key:"currentPrice",  label:"Prix actuel", num:true},
   {key:"currentValue",  label:"Valeur (€)", num:true},
   {key:"gain",          label:"+/- value (€)", num:true},
+  {key:"divReceived",   label:"Dividendes perçus (€)", num:true},
+  {key:"totalReturn",   label:"Rendement total (€)", num:true},
   {key:"analyst",       label:"Analystes", num:true},
   {key:"dividend",      label:"Prochain dividende", num:true},
 ];
@@ -975,6 +1036,8 @@ function renderHoldingsTable(rows){
       gain:     `<td class="num ${gainClass}" data-label="+/- value">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>`,
       analyst:  `<td class="num" data-label="Analystes">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>`,
       dividend: `<td class="num" data-label="Prochain dividende">${nextDividendCell(r)}</td>`,
+      divReceived: `<td class="num" data-label="Dividendes perçus">${r.div && r.div.received.length ? fmtEUR(r.divReceived) + `<span style="display:block;font-size:0.76rem;color:var(--ink-faint);">${r.div.estimated ? 'dernier versement seul' : r.div.received.length + ' versement' + (r.div.received.length>1?'s':'')}</span>` : '—'}</td>`,
+      totalReturn: `<td class="num ${r.totalReturn==null ? '' : (r.totalReturn>=0 ? 'pos' : 'neg')}" data-label="Rendement total">${r.totalReturn!=null ? fmtEUR(r.totalReturn)+' ('+fmtPctSigned(r.totalReturnPct)+')' : '—'}</td>`,
     };
     html += `<tr class="holding-row${!r.fxOk?' fx-warn':''}" data-detail-id="${r.id}">
       ${cols.map(c=>cellHtml[c.key] || '<td></td>').join('')}
@@ -991,6 +1054,9 @@ function renderHoldingsTable(rows){
   html += `</tbody></table>`;
   if(rows.some(r=>r.currency && r.currency !== "EUR")){
     html += `<div class="detail-note" style="margin-top:10px;">Prix d'achat et prix actuel affichés dans la devise native du titre. Valeur et plus/moins-value converties en euros au taux le plus récent disponible.</div>`;
+  }
+  if(rows.some(r=>r.div && r.div.estimated)){
+    html += `<div class="detail-note" style="margin-top:10px;">Dividendes perçus : historique complet pas encore disponible pour certains titres (seul le dernier versement est compté). Il sera ajouté au prochain passage du workflow « Historique du portefeuille ».</div>`;
   }
   if(rows.some(r=>r.currentPrice==null)){
     html += `<div class="detail-note" style="margin-top:10px;">* Titre absent du snapshot actuel (peut-être sorti de l'univers scrapé) — coût d'achat affiché à la place du prix live.</div>`;
@@ -1269,6 +1335,7 @@ async function renderChart(){
 
   const idxHist = benchmarkKeys.length ? await loadIndexHistory() : null;
   const holdingsPrices = holdings.length ? await loadHoldingsHistory() : null;
+  const divHistory = holdings.length ? await loadDividendHistory() : null;
   const fxRates = holdings.length ? await loadFxRates() : null;
   let liveBySymbol = {};
   if(holdings.length){
@@ -1325,8 +1392,18 @@ async function renderChart(){
       // nouvel achat (de l'argent ajouté, pas un gain), ce qui écrasait
       // visuellement les indices de comparaison et rendait le graphique
       // trompeur sur 3-5 ans.
+      // Dividendes cumulés : même convention (panier actuel), versements
+      // détachés entre le début de la période et la date considérée.
+      const firstDate = candidateDates[0];
+      const divCumul = (h, date) => {
+        const hist = divHistory ? divHistory[h.symbol] : null;
+        if(!hist || !Array.isArray(hist.events)) return 0;
+        const ccy = hist.currency || resolveListedCurrency(liveBySymbol[h.symbol] || h);
+        const perShare = hist.events.filter(e=>e.date > firstDate && e.date <= date).reduce((s,e)=>s+e.amount, 0);
+        return perShare ? toEUR(h.quantity * perShare, ccy, fxRates) : 0;
+      };
       const computed = candidateDates.map(date=>{
-        let total = 0, anyPriced = false;
+        let total = 0, divs = 0, anyPriced = false;
         for(const h of holdings){
           const s = seriesBySymbol[h.symbol];
           const pt = s ? findClosest(s, date) : null;
@@ -1334,8 +1411,9 @@ async function renderChart(){
           anyPriced = true;
           const ccy = resolveListedCurrency(liveBySymbol[h.symbol] || h);
           total += h.quantity * toEUR(pt.close, ccy, fxRates);
+          divs += divCumul(h, date);
         }
-        return anyPriced ? { date, totalValue: total } : null;
+        return anyPriced ? { date, totalValue: total, totalWithDiv: total + divs } : null;
       }).filter(Boolean);
       if(computed.length >= 2) retroSeries = computed;
     }
@@ -1434,6 +1512,21 @@ async function renderChart(){
       pointRadius: 2,
       spanGaps: false,
     });
+    if(divHistory && sorted.some(p=>p.totalWithDiv > p.totalValue)){
+      datasets.push({
+        label: "Portefeuille + dividendes bruts (base 100)",
+        data: labels.map(d => {
+          const p = findPf(d);
+          return p ? (base>0 ? p.totalWithDiv/base*100 : 100) : null;
+        }),
+        borderColor: "#8C6D1F",
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        tension: 0.15,
+        pointRadius: 0,
+        spanGaps: false,
+      });
+    }
   } else if(hasLocalPfLine){
     const pfSorted = [...filteredPf].sort((a,b)=>a.date.localeCompare(b.date));
     const pfBase = pfSorted[0].totalValue;

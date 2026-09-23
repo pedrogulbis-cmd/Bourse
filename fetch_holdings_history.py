@@ -36,6 +36,8 @@ from datetime import datetime, timezone
 
 from tvDatafeed import TvDatafeed, Interval
 
+from fetch_dividends import fetch_all as fetch_dividends
+
 try:
     from config import SITE_BASE_URL
 except ImportError:
@@ -53,6 +55,31 @@ def fetch_one(tv, symbol, n_bars):
         {"date": idx.strftime("%Y-%m-%d"), "close": float(row["close"])}
         for idx, row in df.iterrows()
     ]
+
+
+def load_previous_dividends(path, passphrase):
+    """Historique de dividendes du fichier précédent, pour ne pas perdre un
+    titre si Yahoo ne répond pas ce jour-là (limitation de débit...)."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("encrypted"):
+            if not passphrase:
+                return {}
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                             salt=base64.b64decode(data["salt"]), iterations=data["iterations"])
+            key = kdf.derive(passphrase.encode("utf-8"))
+            plain = AESGCM(key).decrypt(base64.b64decode(data["iv"]), base64.b64decode(data["ciphertext"]), None)
+            data = json.loads(plain)
+        return data.get("dividends") or {}
+    except Exception as e:
+        print(f"  (dividendes précédents illisibles : {e})")
+        return {}
 
 
 def encrypt_payload(data_dict, passphrase):
@@ -193,7 +220,17 @@ def main():
     else:
         out_filename = "holdings-history.json"
 
-    snapshot = {"generatedAt": datetime.now(timezone.utc).isoformat(), "prices": out}
+    # Historique des dividendes (Yahoo Finance) — montants BRUTS par action.
+    print("— Historique des dividendes :")
+    dividends = load_previous_dividends(out_filename, args.passphrase)
+    dividends = {s: v for s, v in dividends.items() if s in symbols}
+    fresh = fetch_dividends(symbols)
+    dividends.update(fresh)
+    kept = [s for s in dividends if s not in fresh]
+    if kept:
+        print(f"  (historique précédent conservé pour : {', '.join(kept)})")
+
+    snapshot = {"generatedAt": datetime.now(timezone.utc).isoformat(), "prices": out, "dividends": dividends}
 
     if args.encrypt:
         passphrase = args.passphrase or getpass.getpass(

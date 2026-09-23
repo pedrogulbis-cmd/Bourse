@@ -31,9 +31,18 @@ function loadAllClosures(){
   return out;
 }
 
+/** Gain d'une clôture, dividendes perçus inclus (les clôtures enregistrées
+ * avant le suivi des dividendes n'en ont pas : plus-value seule). */
+function closureGain(c){
+  return (c.realizedGain||0) + (c.dividendsReceived||0);
+}
+function closureGainPct(c){
+  return c.totalCostBasis>0 ? closureGain(c)/c.totalCostBasis*100 : c.realizedGainPct;
+}
+
 function computeStats(closures){
   const totalInvested = closures.reduce((s,c)=>s+(c.totalCostBasis||0), 0);
-  const totalRealized = closures.reduce((s,c)=>s+(c.realizedGain||0), 0);
+  const totalRealized = closures.reduce((s,c)=>s+closureGain(c), 0);
   const totalRealizedPct = totalInvested>0 ? (totalRealized/totalInvested*100) : null;
   return { count: closures.length, totalInvested, totalRealized, totalRealizedPct };
 }
@@ -97,7 +106,7 @@ function renderByStrategy(closures){
     if(!byStrategy[key]) byStrategy[key] = { count:0, invested:0, realized:0 };
     byStrategy[key].count += 1;
     byStrategy[key].invested += (c.totalCostBasis||0);
-    byStrategy[key].realized += (c.realizedGain||0);
+    byStrategy[key].realized += closureGain(c);
   });
 
   const rows = Object.entries(byStrategy)
@@ -132,7 +141,7 @@ function renderClosuresTable(closures){
     <th>Date de clôture</th><th>Portefeuille</th><th>Méthode</th><th class="num">Positions</th><th class="num">Investi</th><th class="num">Valeur à la clôture</th><th class="num">+/- value</th><th></th>
   </tr></thead><tbody>`;
   sorted.forEach(c=>{
-    const gainClass = c.realizedGain>=0 ? "pos" : "neg";
+    const gainClass = closureGain(c)>=0 ? "pos" : "neg";
     html += `<tr class="closure-row" data-closure-id="${c.id}" data-portfolio-id="${c.portfolioId}">
       <td>${c.closedDate}</td>
       <td>${c.portfolioName}</td>
@@ -140,7 +149,7 @@ function renderClosuresTable(closures){
       <td class="num">${c.positionCount}</td>
       <td class="num">${fmtEUR(c.totalCostBasis)}</td>
       <td class="num">${fmtEUR(c.totalValue)}</td>
-      <td class="num ${gainClass}">${fmtEUR(c.realizedGain)} (${fmtPctSigned(c.realizedGainPct)})</td>
+      <td class="num ${gainClass}">${fmtEUR(closureGain(c))} (${fmtPctSigned(closureGainPct(c))})${c.dividendsReceived ? `<span style="display:block;font-size:0.76rem;color:var(--ink-faint);">dont ${fmtEUR(c.dividendsReceived)} de dividendes</span>` : ''}</td>
       <td><button class="remove-btn" data-remove-closure="${c.id}" data-portfolio-id="${c.portfolioId}" title="Supprimer cette ligne d'historique (ne restaure pas les positions)">✕</button></td>
     </tr>`;
   });

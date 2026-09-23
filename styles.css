@@ -268,6 +268,17 @@ td.num.neg{color:var(--oxide-bright);}
 }
 
 .detail-row td{background:var(--panel-raised);white-space:normal;padding:16px 18px;}
+/* table.holdings td impose nowrap et l'emporte sur la règle ci-dessus
+   (sélecteur plus spécifique) : sans ça, les libellés du détail ne passent
+   pas à la ligne et se chevauchent. */
+table.holdings tr.detail-row > td{white-space:normal;}
+.hd-divs{margin-top:16px;padding-top:14px;border-top:1px solid var(--hairline);}
+.hd-divs-title{font-size:0.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--brass);margin-bottom:10px;font-weight:600;}
+.div-list{margin-top:12px;border-collapse:collapse;font-size:0.8rem;min-width:320px;}
+.div-list th{font-size:0.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);font-weight:500;text-align:left;padding:4px 14px 4px 0;border-bottom:1px solid var(--hairline);}
+.div-list td{padding:4px 14px 4px 0;font-family:'IBM Plex Mono',monospace;color:var(--ink-dim);border-bottom:1px solid var(--hairline);}
+.div-list .num{text-align:right;}
+.cell-sub{display:block;font-size:0.74rem;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;}
 .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px 18px;}
 .detail-item{min-width:0;}
 /* flex + wrap : sans ça, un libellé long suivi de son badge de rang
@@ -405,6 +416,10 @@ tr.closure-row:hover{background:rgba(201,162,75,0.06);}
 .pf-summary .card .val{font-family:'IBM Plex Mono',monospace;font-size:1.3rem;font-weight:600;color:var(--ink);}
 .pf-summary .card .val.pos{color:var(--verdigris-bright);}
 .pf-summary .card .val.neg{color:var(--oxide-bright);}
+.pf-summary .card .sub-lines{
+  display:flex;flex-direction:column;gap:3px;margin-top:8px;
+  font-size:0.74rem;color:var(--ink-faint);line-height:1.35;
+}
 .pf-summary .card .sub-breakdown{
   display:flex;gap:12px;margin-top:6px;font-family:'IBM Plex Mono',monospace;
   font-size:0.7rem;color:var(--ink-faint);font-weight:400;

@@ -400,14 +400,17 @@ function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPosition
     </div>
     <div class="card"><div class="lbl">Plus/moins-value</div><div class="val ${gainClass}">${fmtEUR(totalGain)} (${fmtPctSigned(totalGainPct)})</div></div>
     <div class="card">
-      <div class="lbl">Rendement total (dividendes bruts inclus)</div>
+      <div class="lbl">Rendement total</div>
       <div class="val ${totalReturn>=0?'pos':'neg'}">${fmtEUR(totalReturn)} (${fmtPctSigned(totalReturnPct)})</div>
-      <div class="sub-breakdown"><span>Plus-value ${fmtEUR(totalGain)}</span><span>Dividendes perçus ${fmtEUR(divReceived||0)}</span></div>
+      <div class="sub-lines"><span>plus-value + dividendes bruts perçus</span></div>
     </div>
     <div class="card">
-      <div class="lbl">Dividendes attendus (12M)</div>
-      <div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div>
-      ${nextDividend || divReceived ? `<div class="sub-breakdown">${nextDividend ? `<span>Prochain : ${nextDividend.amount!=null?fmtEUR(nextDividend.amount)+' — ':''}${nextDividend.name}, le ${fmtDateFR(nextDividend.date)}</span>` : ''}${divReceived ? `<span>Perçus depuis l'achat : ${fmtEUR(divReceived)}</span>` : ''}</div>` : ''}
+      <div class="lbl">Dividendes perçus</div>
+      <div class="val">${fmtEUR(divReceived||0)}</div>
+      <div class="sub-lines">
+        <span>Attendus sur 12 mois : ${fmtEUR(dividendIncome)}${yieldOnCost!=null?` (${yieldOnCost.toFixed(1)} % du coût)`:''}</span>
+        ${nextDividend ? `<span>Prochain : ${nextDividend.amount!=null?fmtEUR(nextDividend.amount)+' · ':''}${nextDividend.name} · ${fmtDateFR(nextDividend.date)}</span>` : ''}
+      </div>
     </div>
   `;
 }
@@ -889,28 +892,36 @@ function buildHoldingDetail(r){
       ["Liquidité (valeur échangée/jour)", cap(live.avgDailyValue)],
       ["Note des analystes", analystBadgeHTML(live.analystLabel)],
     ];
-    const d = r.div;
-    const ccy = r.currency && r.currency!=="EUR" ? ` ${r.currency}` : " €";
-    const perShare = v => v==null ? "—" : n(v,4) + ccy;
-    if(d){
-      items.push(
-        ["Prochain détachement", d.next ? fmtDateFR(d.next.exDate) : "non annoncé"],
-        ["Prochain paiement", d.next ? fmtDateFR(d.next.payDate) : "—"],
-        ["Prochain dividende / action", d.next ? perShare(d.next.perShare) : "—"],
-        ["Prochain dividende (ta position)", d.next && d.next.totalEUR!=null ? fmtEUR(d.next.totalEUR) + (d.next.eligible?"":" (non éligible)") : "—"],
-        ["Dernier dividende / action", d.last ? `${perShare(d.last.perShare)} (payé le ${fmtDateFR(d.last.payDate)})` : "—"],
-        ["Dividende annuel / action (dernier exercice)", perShare(d.perShareFy)],
-        ["Dividendes perçus depuis l'achat (brut)", d.received.length ? fmtEUR(d.receivedEUR) : "aucun"],
-        ["Rendement total (dividendes inclus)", r.totalReturn!=null ? `${fmtEUR(r.totalReturn)} (${fmtPctSigned(r.totalReturnPct)})` : "—"],
-      );
-    }
-    gridHtml = `<div class="detail-grid">` +
-      items.map(([k,v])=>`<div class="detail-item"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') +
+    const grid = list => `<div class="detail-grid">` +
+      list.map(([k,v])=>`<div class="detail-item"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') +
       `</div>`;
-    if(d && d.received.length){
-      gridHtml += `<div class="detail-note" style="margin-top:10px;"><strong>Dividendes perçus</strong> (date de détachement · brut par action · pour ${r.quantity} action${r.quantity>1?'s':''})${d.estimated?' — historique complet pas encore disponible, dernier versement seul':''}<br>` +
-        [...d.received].reverse().map(e=>`${fmtDateFR(e.date)} · ${n(e.perShare,4)} ${e.currency==='EUR'?'€':e.currency} · ${fmtEUR(e.totalEUR)}`).join('<br>') +
-        `</div>`;
+    gridHtml = grid(items);
+
+    const d = r.div;
+    if(d){
+      const unit = c => (!c || c==="EUR") ? "€" : c;
+      const perShare = (v, c=r.currency) => v==null ? "—" : `${n(v,4)} ${unit(c)}`;
+      let nextTxt = "non annoncé";
+      if(d.next){
+        nextTxt = d.next.perShare!=null ? `${perShare(d.next.perShare)} / action` : "montant inconnu";
+        if(d.next.totalEUR!=null) nextTxt += ` · ${fmtEUR(d.next.totalEUR)} pour toi`;
+        if(!d.next.eligible) nextTxt += " (non éligible : acheté après le détachement)";
+      }
+      const divItems = [
+        ["Prochain dividende", nextTxt],
+        ["Détachement / paiement", d.next ? `${fmtDateFR(d.next.exDate)} / ${fmtDateFR(d.next.payDate)}` : "—"],
+        ["Dividende annuel / action", perShare(d.perShareFy)],
+        ["Perçus depuis l'achat (brut)", d.received.length ? `${fmtEUR(d.receivedEUR)} · ${d.received.length} versement${d.received.length>1?'s':''}` : "aucun"],
+        ["Rendement total", r.totalReturn!=null ? `${fmtEUR(r.totalReturn)} (${fmtPctSigned(r.totalReturnPct)})` : "—"],
+      ];
+      let listHtml = "";
+      if(d.received.length){
+        listHtml = `<table class="div-list"><thead><tr><th>Détachement</th><th class="num">Brut / action</th><th class="num">Pour ${r.quantity} action${r.quantity>1?'s':''}</th></tr></thead><tbody>` +
+          [...d.received].reverse().map(e=>`<tr><td>${fmtDateFR(e.date)}</td><td class="num">${perShare(e.perShare, e.currency)}</td><td class="num">${fmtEUR(e.totalEUR)}</td></tr>`).join('') +
+          `</tbody></table>` +
+          (d.estimated ? `<div class="detail-note">Historique complet pas encore disponible pour ce titre : seul le dernier versement est compté.</div>` : "");
+      }
+      gridHtml += `<div class="hd-divs"><div class="hd-divs-title">Dividendes</div>${grid(divItems)}${listHtml}</div>`;
     }
   } else {
     gridHtml = `<div class="detail-note">Pas de données de marché pour ce titre (non retrouvé dans le snapshot). Utilise « 🔄 Rechercher » après avoir relancé le scraper.</div>`;
@@ -989,7 +1000,6 @@ const HOLDINGS_COLS = [
   {key:"currentPrice",  label:"Prix actuel", num:true},
   {key:"currentValue",  label:"Valeur (€)", num:true},
   {key:"gain",          label:"+/- value (€)", num:true},
-  {key:"divReceived",   label:"Dividendes perçus (€)", num:true},
   {key:"totalReturn",   label:"Rendement total (€)", num:true},
   {key:"analyst",       label:"Analystes", num:true},
   {key:"dividend",      label:"Prochain dividende", num:true},
@@ -1006,7 +1016,7 @@ function nextDividendCell(r){
   const when = n.payDate ? `versé le ${fmtDateFR(n.payDate)}` : `détaché le ${fmtDateFR(n.exDate)}`;
   const amt = n.totalEUR!=null ? fmtEUR(n.totalEUR) : "montant inconnu";
   const note = n.eligible ? "" : ` <span style="color:var(--ink-faint);" title="Acheté après la date de détachement : ce versement ne te revient pas">(non éligible)</span>`;
-  return `${amt}${note}<span style="display:block;font-size:0.76rem;color:var(--ink-faint);">${when}</span>`;
+  return `${amt}${note}<span class="cell-sub">${when}</span>`;
 }
 
 function renderHoldingsTable(rows){
@@ -1036,8 +1046,7 @@ function renderHoldingsTable(rows){
       gain:     `<td class="num ${gainClass}" data-label="+/- value">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>`,
       analyst:  `<td class="num" data-label="Analystes">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>`,
       dividend: `<td class="num" data-label="Prochain dividende">${nextDividendCell(r)}</td>`,
-      divReceived: `<td class="num" data-label="Dividendes perçus">${r.div && r.div.received.length ? fmtEUR(r.divReceived) + `<span style="display:block;font-size:0.76rem;color:var(--ink-faint);">${r.div.estimated ? 'dernier versement seul' : r.div.received.length + ' versement' + (r.div.received.length>1?'s':'')}</span>` : '—'}</td>`,
-      totalReturn: `<td class="num ${r.totalReturn==null ? '' : (r.totalReturn>=0 ? 'pos' : 'neg')}" data-label="Rendement total">${r.totalReturn!=null ? fmtEUR(r.totalReturn)+' ('+fmtPctSigned(r.totalReturnPct)+')' : '—'}</td>`,
+      totalReturn: `<td class="num ${r.totalReturn==null ? '' : (r.totalReturn>=0 ? 'pos' : 'neg')}" data-label="Rendement total">${r.totalReturn!=null ? fmtEUR(r.totalReturn)+' ('+fmtPctSigned(r.totalReturnPct)+')' : '—'}${r.divReceived ? `<span class="cell-sub">dont ${fmtEUR(r.divReceived)} de dividendes</span>` : ''}</td>`,
     };
     html += `<tr class="holding-row${!r.fxOk?' fx-warn':''}" data-detail-id="${r.id}">
       ${cols.map(c=>cellHtml[c.key] || '<td></td>').join('')}
@@ -2063,7 +2072,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.33.0";
+  if(versionEl) versionEl.textContent = "v7.34.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

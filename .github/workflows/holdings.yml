@@ -52,7 +52,7 @@ jobs:
             echo "Secret HOLDINGS_SYMBOLS_NM vide — étape ignorée."
             exit 0
           fi
-          python fetch_holdings_history.py --symbols "$SYMS" --suffix NM --passphrase "$PASS"
+          python fetch_holdings_history.py --symbols "$SYMS" --suffix NM --encrypt --passphrase "$PASS"
 
       - name: Historique — SM
         env:
@@ -63,7 +63,7 @@ jobs:
             echo "Secret HOLDINGS_SYMBOLS_SM vide — étape ignorée."
             exit 0
           fi
-          python fetch_holdings_history.py --symbols "$SYMS" --suffix SM --passphrase "$PASS"
+          python fetch_holdings_history.py --symbols "$SYMS" --suffix SM --encrypt --passphrase "$PASS"
 
       - name: Committer
         run: |

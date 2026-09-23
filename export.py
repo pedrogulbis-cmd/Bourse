@@ -70,6 +70,19 @@ def _build_records(conn):
             "analystRating": r.get("analyst_rating"),
             "analystLabel": r.get("analyst_label"),
         })
+        # Calendrier des dividendes — n'ajoute que les champs renseignés
+        # (la majorité des titres n'ont pas de dividende annoncé) pour ne
+        # pas alourdir inutilement un snapshot déjà découpé en parties.
+        div = {
+            "divExNext": r.get("div_ex_date_next"),
+            "divPayNext": r.get("div_pay_date_next"),
+            "divAmountNext": r.get("div_amount_next"),
+            "divExLast": r.get("div_ex_date_last"),
+            "divPayLast": r.get("div_pay_date_last"),
+            "divAmountLast": r.get("div_amount_last"),
+            "divPerShareFy": r.get("div_per_share_fy"),
+        }
+        records[-1].update({k: v for k, v in div.items() if v is not None})
     return records, skipped
 
 

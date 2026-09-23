@@ -199,6 +199,57 @@ function fxRateAvailable(currency, fxRates){
 
 let chartInstance = null;
 
+/** Timestamp Unix (s) du snapshot -> "AAAA-MM-JJ" (null si absent). */
+function unixToISODate(ts){
+  return ts ? new Date(ts*1000).toISOString().slice(0,10) : null;
+}
+function fmtDateFR(iso){
+  if(!iso) return "—";
+  const [y,m,d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Calendrier des dividendes d'une position, à partir des champs divExNext /
+ * divPayNext / divAmountNext (prochain versement annoncé) et divExLast /
+ * divPayLast / divAmountLast (dernier versement) du snapshot. Les montants
+ * sont par action, dans la devise de cotation — multipliés par la quantité
+ * détenue puis convertis en euros.
+ *
+ * « Dernier dividende perçu » : on considère qu'il t'a été versé si tu
+ * détenais le titre AVANT sa date de détachement (règle réelle : il faut
+ * posséder l'action la veille de l'ex-date). TradingView ne fournit que le
+ * dernier versement, pas l'historique complet — les dividendes plus
+ * anciens ne sont pas comptés.
+ */
+function computeDividendInfo(h, live, currency, fxRates){
+  if(!live) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const total = amt => amt!=null ? toEUR(h.quantity * amt, currency, fxRates) : null;
+
+  let next = null;
+  const nextEx = unixToISODate(live.divExNext);
+  const nextPay = unixToISODate(live.divPayNext);
+  // Ignore un "prochain" versement déjà entièrement payé (snapshot en retard).
+  if((nextEx || nextPay) && !(nextPay && nextPay < today)){
+    const eligible = !h.purchaseDate || !nextEx || h.purchaseDate < nextEx;
+    next = { exDate: nextEx, payDate: nextPay, perShare: live.divAmountNext ?? null,
+             totalEUR: total(live.divAmountNext), detached: !!(nextEx && nextEx <= today), eligible };
+  }
+
+  let last = null;
+  const lastEx = unixToISODate(live.divExLast);
+  const lastPay = unixToISODate(live.divPayLast);
+  if(lastEx && live.divAmountLast != null){
+    const received = (!h.purchaseDate || h.purchaseDate < lastEx) && (!lastPay || lastPay <= today);
+    last = { exDate: lastEx, payDate: lastPay, perShare: live.divAmountLast,
+             totalEUR: total(live.divAmountLast), received };
+  }
+
+  const annualEUR = live.divPerShareFy!=null ? total(live.divPerShareFy) : null;
+  return { next, last, annualEUR, perShareFy: live.divPerShareFy ?? null };
+}
+
 /**
  * Calcule les lignes de portefeuille (prix natif + converti en euros) pour
  * une liste de positions donnée — factorisé pour être réutilisé à la fois
@@ -224,7 +275,8 @@ function computeHoldingsRows(holdings, snap, fxRates){
     const gain = currentValue!=null ? currentValue - costBasis : null;
     const gainPct = (currentValue!=null && costBasis>0) ? (gain/costBasis*100) : null;
     const fxOk = fxRateAvailable(currency, fxRates) && fxRateAvailable(purchaseCcy, fxRates);
-    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk };
+    const div = computeDividendInfo(h, live, currency, fxRates);
+    return { ...h, live, currency, purchaseCcy, currentPrice, costBasisNative, currentValueNative, costBasis, currentValue, gain, gainPct, fxOk, div };
   });
 
   return { rows, missingFx };
@@ -267,7 +319,15 @@ async function renderPortfolio(){
   window.__lastRows = rows;
   renderPlan();
 
-  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome, totalCash);
+  // Prochain versement du portefeuille (le plus proche parmi les positions
+  // qui y ont droit) et somme des derniers dividendes effectivement perçus.
+  const upcoming = rows
+    .filter(r=>r.div && r.div.next && r.div.next.eligible && (r.div.next.payDate || r.div.next.exDate))
+    .map(r=>({ name: r.name, date: r.div.next.payDate || r.div.next.exDate, amount: r.div.next.totalEUR }))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  const lastReceived = rows.reduce((s,r)=> s + (r.div && r.div.last && r.div.last.received ? (r.div.last.totalEUR||0) : 0), 0);
+
+  renderSummary(totalCost, totalValue, totalGain, totalGainPct, rows.length, dividendIncome, totalCash, upcoming[0] || null, lastReceived);
   renderHoldingsTable(rows);
   renderCash(cashRows);
   renderAllocation(rows);
@@ -282,7 +342,7 @@ async function renderPortfolio(){
   await renderChart();
 }
 
-function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome, totalCash){
+function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPositions, dividendIncome, totalCash, nextDividend, lastReceived){
   const el = document.getElementById("pfSummary");
   const grandTotal = totalValue + (totalCash||0);
   if(nPositions === 0 && !totalCash){
@@ -300,7 +360,11 @@ function renderSummary(totalCost, totalValue, totalGain, totalGainPct, nPosition
       ${totalCash ? `<div class="sub-breakdown"><span>Actions ${fmtEUR(totalValue)}</span><span>Cash ${fmtEUR(totalCash)}</span></div>` : ''}
     </div>
     <div class="card"><div class="lbl">Plus/moins-value</div><div class="val ${gainClass}">${fmtEUR(totalGain)} (${fmtPctSigned(totalGainPct)})</div></div>
-    <div class="card"><div class="lbl">Dividendes attendus (12M)</div><div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div></div>
+    <div class="card">
+      <div class="lbl">Dividendes attendus (12M)</div>
+      <div class="val">${fmtEUR(dividendIncome)}${yieldOnCost!=null?` <span style="font-size:0.55em;color:var(--ink-faint);">(${yieldOnCost.toFixed(1)}% du coût)</span>`:''}</div>
+      ${nextDividend || lastReceived ? `<div class="sub-breakdown">${nextDividend ? `<span>Prochain : ${nextDividend.amount!=null?fmtEUR(nextDividend.amount)+' — ':''}${nextDividend.name}, le ${fmtDateFR(nextDividend.date)}</span>` : ''}${lastReceived ? `<span>Derniers perçus : ${fmtEUR(lastReceived)}</span>` : ''}</div>` : ''}
+    </div>
   `;
 }
 
@@ -772,6 +836,20 @@ function buildHoldingDetail(r){
       ["Liquidité (valeur échangée/jour)", cap(live.avgDailyValue)],
       ["Note des analystes", analystBadgeHTML(live.analystLabel)],
     ];
+    const d = r.div;
+    const ccy = r.currency && r.currency!=="EUR" ? ` ${r.currency}` : " €";
+    const perShare = v => v==null ? "—" : n(v,4) + ccy;
+    if(d){
+      items.push(
+        ["Prochain détachement", d.next ? fmtDateFR(d.next.exDate) : "non annoncé"],
+        ["Prochain paiement", d.next ? fmtDateFR(d.next.payDate) : "—"],
+        ["Prochain dividende / action", d.next ? perShare(d.next.perShare) : "—"],
+        ["Prochain dividende (ta position)", d.next && d.next.totalEUR!=null ? fmtEUR(d.next.totalEUR) + (d.next.eligible?"":" (non éligible)") : "—"],
+        ["Dernier dividende / action", d.last ? `${perShare(d.last.perShare)} (payé le ${fmtDateFR(d.last.payDate)})` : "—"],
+        ["Dernier dividende perçu", d.last ? (d.last.received ? fmtEUR(d.last.totalEUR) : "non (acheté après le détachement)") : "—"],
+        ["Dividende annuel / action (dernier exercice)", perShare(d.perShareFy)],
+      );
+    }
     gridHtml = `<div class="detail-grid">` +
       items.map(([k,v])=>`<div class="detail-item"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('') +
       `</div>`;
@@ -853,7 +931,22 @@ const HOLDINGS_COLS = [
   {key:"currentValue",  label:"Valeur (€)", num:true},
   {key:"gain",          label:"+/- value (€)", num:true},
   {key:"analyst",       label:"Analystes", num:true},
+  {key:"dividend",      label:"Prochain dividende", num:true},
 ];
+
+/** Cellule « Prochain dividende » : montant pour la position + date de
+ * paiement (ou de détachement si le paiement n'est pas encore connu). */
+function nextDividendCell(r){
+  const n = r.div && r.div.next;
+  if(!n){
+    if(r.live && r.live.divYield) return `<span style="color:var(--ink-faint);">non annoncé</span>`;
+    return "—";
+  }
+  const when = n.payDate ? `versé le ${fmtDateFR(n.payDate)}` : `détaché le ${fmtDateFR(n.exDate)}`;
+  const amt = n.totalEUR!=null ? fmtEUR(n.totalEUR) : "montant inconnu";
+  const note = n.eligible ? "" : ` <span style="color:var(--ink-faint);" title="Acheté après la date de détachement : ce versement ne te revient pas">(non éligible)</span>`;
+  return `${amt}${note}<span style="display:block;font-size:0.76rem;color:var(--ink-faint);">${when}</span>`;
+}
 
 function renderHoldingsTable(rows){
   const wrap = document.getElementById("holdingsWrap");
@@ -881,6 +974,7 @@ function renderHoldingsTable(rows){
       currentValue: `<td class="num" data-label="Valeur">${!r.fxOk?`<span class="fx-warn-badge" title="Taux de change ${r.currency} manquant (fx-rates.json) — montant NON converti, probablement faux">⚠ ${r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)}</span>`:(r.currentValue!=null?fmtEUR(r.currentValue):fmtEUR(r.costBasis)+' *')}</td>`,
       gain:     `<td class="num ${gainClass}" data-label="+/- value">${r.gain!=null?fmtEUR(r.gain)+' ('+fmtPctSigned(r.gainPct)+')':'—'}</td>`,
       analyst:  `<td class="num" data-label="Analystes">${analystBadgeHTML(r.live ? r.live.analystLabel : null)}</td>`,
+      dividend: `<td class="num" data-label="Prochain dividende">${nextDividendCell(r)}</td>`,
     };
     html += `<tr class="holding-row${!r.fxOk?' fx-warn':''}" data-detail-id="${r.id}">
       ${cols.map(c=>cellHtml[c.key] || '<td></td>').join('')}

@@ -49,7 +49,14 @@ FIELDS = [
     "price_book_fq",                           # P/B
     "price_sales_current",                     # P/S — NOM DE CHAMP NON CONFIRMÉ, à vérifier au premier run
     "enterprise_value_ebitda_ttm",              # EV/EBITDA (inversé -> EBITDA/EV)
-    "dividend_yield_recent",                    # rendement du dividende
+    "dividends_yield_current",                  # rendement du dividende (%) — "dividend_yield_recent" renvoie désormais null pour tous les titres
+    "ex_dividend_date_upcoming",                # prochaine date de détachement (timestamp Unix, null si non annoncée)
+    "dividend_payment_date_upcoming",           # prochaine date de paiement
+    "dividend_amount_upcoming",                 # montant du prochain dividende par action (devise de cotation)
+    "ex_dividend_date_recent",                  # dernière date de détachement
+    "dividend_payment_date_recent",             # dernière date de paiement
+    "dividend_amount_recent",                   # montant du dernier dividende par action
+    "dps_common_stock_prim_issue_fy",           # dividende par action sur le dernier exercice
     "buyback_yield",                            # rendement des rachats d'actions — NOM NON CONFIRMÉ, à vérifier au premier run
     "Perf.3M",                                  # momentum 3 mois
     "Perf.6M",                                  # momentum 6 mois
@@ -70,7 +77,7 @@ def _row_to_record(row, country_code):
     ev_ebitda = row.get("enterprise_value_ebitda_ttm")
     ebitda_yield = (1.0 / ev_ebitda) if ev_ebitda and ev_ebitda > 0 else None
 
-    div_yield = row.get("dividend_yield_recent")
+    div_yield = row.get("dividends_yield_current")
     div_yield = (div_yield / 100.0) if div_yield is not None else None
 
     buyback_yield = row.get("buyback_yield")
@@ -132,6 +139,13 @@ def _row_to_record(row, country_code):
         "analyst_label": analyst_label,
         "home_country": row.get("country") or None,  # nom brut TradingView, ex. "Bermuda" — pour affichage uniquement
         "home_country_code": NAME_TO_COUNTRY_CODE.get(row.get("country")),  # None si pays hors de notre liste (ex. Bermudes)
+        "div_ex_date_next": row.get("ex_dividend_date_upcoming"),
+        "div_pay_date_next": row.get("dividend_payment_date_upcoming"),
+        "div_amount_next": row.get("dividend_amount_upcoming"),
+        "div_ex_date_last": row.get("ex_dividend_date_recent"),
+        "div_pay_date_last": row.get("dividend_payment_date_recent"),
+        "div_amount_last": row.get("dividend_amount_recent"),
+        "div_per_share_fy": row.get("dps_common_stock_prim_issue_fy"),
         "listed_currency": row.get("currency") or None,  # devise RÉELLE du prix affiché (ex. "GBX" pour du GB coté en pence) — prioritaire sur la devise déduite du pays côté site
     }
 

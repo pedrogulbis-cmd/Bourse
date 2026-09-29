@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.37.0";
+const APP_VERSION = "v7.38.0";
 
 let state = {
   strategy: "trending_value",
@@ -16,7 +16,7 @@ let state = {
   resultCount: 25,
   mcapFloor: 1000000000,
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
-  reportMaxMonths: null, // optionnel — écarte les titres dont les derniers résultats publiés datent de plus de N mois
+  quantInvesting: false, // aligne l'univers sur celui de Quant Investing (voir applyQuantInvestingUniverse)
   diversificationPct: null, // optionnel — null = aucun plafond par pays
   peaOnly: false, // filtre éligibilité PEA (domicile UE/EEE)
   excludeCrossListed: false, // exclut les titres dont le domicile réel diffère du pays de cotation (badge 🌐)
@@ -116,10 +116,8 @@ async function runScreening(){
       // écarter ceux dont on SAIT qu'ils sont peu liquides.
       records = records.filter(r => r.avgDailyValue == null || r.avgDailyValue >= state.liquidityFloor);
     }
-    if(state.reportMaxMonths){
-      // Comme pour la liquidité, un titre sans date connue n'est pas exclu.
-      const cutoff = Date.now()/1000 - state.reportMaxMonths * 30.44 * 86400;
-      records = records.filter(r => r.reportDate == null || r.reportDate >= cutoff);
+    if(state.quantInvesting){
+      records = applyQuantInvestingUniverse(records);
     }
     if(state.peaOnly){
       records = records.filter(r => isPeaEligible(r));
@@ -142,7 +140,7 @@ async function runScreening(){
     const beforeDedupe = records.length;
     records = dedupeForScreening(records);
     if(records.length < beforeDedupe){
-      toast(`${beforeDedupe - records.length} cotations doublons (même entreprise, plusieurs bourses) fusionnées pour ce screening — la recherche, elle, continue de toutes les afficher.`);
+      toast(`${beforeDedupe - records.length} lignes écartées (même société sur plusieurs bourses ou classes d'actions, actions de préférence) — la recherche, elle, continue de toutes les afficher.`);
     }
 
     records = scorePool(records.map(r=>({...r}))); // copie défensive, scorePool mute les objets
@@ -162,6 +160,7 @@ async function runScreening(){
       universeCount: universeCount,
       countries: countries,
       exchanges: byExchange ? [...state.exchanges] : null,
+      quantInvesting: state.quantInvesting,
       snapshotGeneratedAt: snap.generatedAt,
       diversificationPct: state.diversificationPct,
       diversificationApplied: diversification.appliedPct,
@@ -257,19 +256,73 @@ function applyDiversification(sortedFullList, n, maxPct){
   return { selected: result, appliedPct: relaxed ? appliedPct : maxPct, relaxed };
 }
 
+/* ---------------------------------------------------------------
+   Univers « Quant Investing »
+   Règles relevées en comparant leur univers complet (7 674 titres) au
+   nôtre avec les mêmes réglages de capitalisation et de volume :
+   - pays absents de leur base : Corée, Brésil, Afrique du Sud, Turquie,
+     Mexique, Singapour ;
+   - Chine continentale absente (Shanghai, Shenzhen) : leur « Chine » ne
+     contient que des sociétés chinoises cotées à Hong Kong ;
+   - EBITDA/EV obligatoire : écarte banques et assurances, qui n'en ont pas ;
+   - comptes récents : leur filtre est « 6 derniers mois », mais les dates
+     de TradingView ont souvent du retard (Halfords, leur n°1, y date de
+     novembre) ; 12 mois donne le même recoupement sans perdre ces titres.
+     Date inconnue = exclu ;
+   - pas de cotation croisée : une société cotée hors de son pays de
+     domicile n'est gardée que si ce domicile n'est pas un pays couvert
+     (ex. société des Bermudes cotée à New York : gardée, comme chez eux).
+   --------------------------------------------------------------- */
+const QI_EXCLUDED_COUNTRIES = new Set(["KR","BR","ZA","TR","MX","SG"]);
+const QI_EXCLUDED_EXCHANGES = new Set(["SSE","SZSE"]);
+function applyQuantInvestingUniverse(records){
+  const cutoff = Date.now()/1000 - 12 * 30.44 * 86400;
+  return records.filter(r =>
+    !QI_EXCLUDED_COUNTRIES.has(r.country) &&
+    !QI_EXCLUDED_EXCHANGES.has(exchangeOf(r.symbol)) &&
+    r.ebitdaYield != null &&
+    r.reportDate != null && r.reportDate >= cutoff &&
+    !(r.homeCountryCode && r.homeCountryCode !== r.country)
+  );
+}
+
+/* Actions de préférence, certificats de dépôt et lignes « série » :
+   pas des actions ordinaires, écartées du screening. Tickers américains à
+   barre oblique (BAC/PL, NEE/PT) = actions de préférence. */
+const NON_COMMON_RE = /\b(pfd|pref|preferred|preference)\b|\d+(\.\d+)?\s?%|\bdepositary shares?\b/i;
+function isNonCommonShare(r){
+  const code = (r.symbol || "").split(":")[1] || "";
+  return NON_COMMON_RE.test(r.name || "") || code.includes("/") || /\.PR/i.test(code);
+}
+
+/* Nom de société normalisé, pour reconnaître une même société sous
+   plusieurs lignes aux ISIN différents : classes A/B (Maersk), certificats
+   canadiens (« NVIDIA Corporation Shs Canadian Depositary Receipt »), ADR. */
+const NAME_NOISE_RE = /\b(inc|incorporated|corp|corporation|co|company|ltd|limited|plc|sa|s\.a|ag|nv|n\.v|se|asa|ab|oyj|spa|s\.p\.a|a\/s|as|holdings?|group|the|class [a-z]|cl [a-z]|series [a-z]|registered|reg|shs|shares?|ord|ordinary|adr|ads|sponsored|unsponsored|depositary|depository|receipts?|canadian|cad|hedged|cdr)\b\.?/gi;
+function companyKey(r){
+  const n = (r.name || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(NAME_NOISE_RE, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  return n + "|" + (r.homeCountry || r.country || "");
+}
+
 function dedupeForScreening(pool){
-  const groups = {};
-  pool.forEach(r=>{
-    const key = r.isin || r.symbol; // repli sur le symbole si pas d'ISIN connu
-    (groups[key] = groups[key] || []).push(r);
-  });
-  return Object.values(groups).map(group=>{
+  const pickBest = group=>{
     if(group.length === 1) return group[0];
     const authentic = group.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
     const candidates = authentic.length ? authentic : group;
     candidates.sort((a,b)=> (b.avgDailyValue||0) - (a.avgDailyValue||0));
     return candidates[0];
-  });
+  };
+  const groupBy = (list, keyFn)=>{
+    const groups = {};
+    list.forEach(r=>{ const k = keyFn(r); (groups[k] = groups[k] || []).push(r); });
+    return Object.values(groups).map(pickBest);
+  };
+  // 1) actions ordinaires uniquement ; 2) même ISIN ; 3) même société sous
+  // des ISIN différents (classes d'actions, certificats, ADR).
+  const common = pool.filter(r => !isNonCommonShare(r));
+  const byIsin = groupBy(common, r => r.isin || r.symbol); // repli sur le symbole si pas d'ISIN connu
+  return groupBy(byIsin, companyKey);
 }
 
 function fmtPct(v){ return (v===null||v===undefined) ? "—" : (v*100>=0?"+":"")+(v*100).toFixed(1)+"%"; }
@@ -543,6 +596,9 @@ function renderResults(){
     : state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
   meta.innerHTML = `${state.lastRunMeta.poolCount} titres passés dans le calcul (sur ${state.lastRunMeta.universeCount} au total pour ${exList ? "ces places" : "ces pays"}, avant filtrage capitalisation/liquidité) · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
 
+  if(state.lastRunMeta.quantInvesting){
+    meta.innerHTML += ` · <span class="diversification-note">Univers aligné sur Quant Investing.</span>`;
+  }
   if(state.lastRunMeta.diversificationPct){
     if(state.lastRunMeta.diversificationRelaxed){
       meta.innerHTML += ` · <span class="diversification-note">⚠ Plafond de diversification demandé (${state.lastRunMeta.diversificationPct}%) impossible à tenir avec assez de pays différents — relâché automatiquement à ~${state.lastRunMeta.diversificationApplied}% pour remplir la liste.</span>`;
@@ -766,8 +822,8 @@ function init(){
     state.liquidityFloor = e.target.value ? parseInt(e.target.value,10) : null;
   });
 
-  document.getElementById("reportMaxMonths").addEventListener("change", (e)=>{
-    state.reportMaxMonths = e.target.value ? parseInt(e.target.value,10) : null;
+  document.getElementById("quantInvesting").addEventListener("change", (e)=>{
+    state.quantInvesting = e.target.checked;
   });
 
   document.getElementById("diversificationPct").addEventListener("change", (e)=>{

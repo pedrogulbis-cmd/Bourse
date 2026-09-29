@@ -7,13 +7,13 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-title" content="Grand Livre">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.37.0"></script>
-<script src="pwa.js?v=7.37.0" defer></script>
+<script src="theme.js?v=7.38.0"></script>
+<script src="pwa.js?v=7.38.0" defer></script>
 <title>Le Grand Livre — Screener Wall Street</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=7.37.0">
+<link rel="stylesheet" href="styles.css?v=7.38.0">
 </head>
 <body>
 
@@ -101,14 +101,6 @@
           </select>
         </div>
         <div class="field">
-          <label>Fraîcheur des comptes — optionnel</label>
-          <select id="reportMaxMonths">
-            <option value="" selected>Aucun filtre (défaut)</option>
-            <option value="6">Résultats publiés il y a moins de 6 mois</option>
-            <option value="12">Résultats publiés il y a moins de 12 mois</option>
-          </select>
-        </div>
-        <div class="field">
           <label>Diversification par pays — optionnel, ne change pas le classement, seulement la sélection finale</label>
           <select id="diversificationPct">
             <option value="" selected>Aucun plafond (défaut)</option>
@@ -131,6 +123,13 @@
           <label class="pea-check">
             <input type="checkbox" id="excludeCrossListed">
             Exclure les cotations croisées 🌐 <span class="pea-hint">(garde uniquement les titres domiciliés dans le pays où ils sont cotés)</span>
+          </label>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <label class="pea-check">
+            <input type="checkbox" id="quantInvesting">
+            Filtre Quant Investing <span class="pea-hint">(même univers que leur screener : sans banques ni assurances, sans Chine continentale, Corée, Brésil, Afrique du Sud, Turquie, Mexique, Singapour, sans cotations croisées, comptes publiés depuis moins d'un an)</span>
           </label>
         </div>
       </div>
@@ -177,9 +176,9 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="data.js?v=7.37.0"></script>
-<script src="columns.js?v=7.37.0"></script>
-<script src="portfolio-store.js?v=7.37.0"></script>
-<script src="app.js?v=7.37.0"></script>
+<script src="data.js?v=7.38.0"></script>
+<script src="columns.js?v=7.38.0"></script>
+<script src="portfolio-store.js?v=7.38.0"></script>
+<script src="app.js?v=7.38.0"></script>
 </body>
 </html>

@@ -927,3 +927,11 @@ td.num, .detail-item .v, .cash-amount, .pf-tab-value, .div-list td{font-variant-
   table.holdings tbody tr.holding-row td{ flex-wrap:wrap; }
   table.holdings tbody tr.holding-row td .cell-sub{ flex-basis:100%; text-align:right; margin-top:-2px; }
 }
+
+/* ---------- screener : filtre par pays ou par place boursière ---------- */
+.geo-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+.geo-count{font-size:12.5px;color:var(--ink-faint);}
+.exchange-list{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));max-height:260px;}
+.exchange-list .c-item{align-items:flex-start;line-height:1.35;}
+.exchange-list .c-item input, .exchange-list .c-item .flag-img, .exchange-list .c-item .flag-emoji{margin-top:2px;}
+.seg.locked-by-strategy{pointer-events:none;}

@@ -6,11 +6,13 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.35.0";
+const APP_VERSION = "v7.36.0";
 
 let state = {
   strategy: "trending_value",
   countries: new Set(), // aucun pays coché par défaut
+  geoMode: "country",   // "country" : filtre par pays ; "exchange" : par place boursière
+  exchanges: new Set(), // places cochées (préfixe du symbole, ex. "EURONEXT")
   resultCount: 25,
   mcapFloor: 1000000000,
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
@@ -84,11 +86,19 @@ async function runScreening(){
   runBtn.disabled = true;
   progressTxt.textContent = "Chargement du snapshot local…";
   try{
-    const countries = [...state.countries];
-    if(countries.length===0){ toast("Sélectionnez au moins un pays."); runBtn.disabled=false; progressTxt.textContent=""; return; }
+    const byExchange = state.geoMode === "exchange";
+    if(byExchange ? state.exchanges.size===0 : state.countries.size===0){
+      toast(byExchange ? "Sélectionnez au moins une place boursière." : "Sélectionnez au moins un pays.");
+      runBtn.disabled=false; progressTxt.textContent=""; return;
+    }
 
     const snap = await loadSnapshot();
-    let records = snap.records.filter(r => countries.includes(r.country));
+    let records = byExchange
+      ? snap.records.filter(r => state.exchanges.has(exchangeOf(r.symbol)))
+      : snap.records.filter(r => state.countries.has(r.country));
+    // Pays couverts : ceux cochés, ou ceux des places choisies (pour
+    // l'affichage des drapeaux au-dessus des résultats).
+    const countries = byExchange ? [...new Set(records.map(r=>r.country))] : [...state.countries];
     const universeCount = records.length; // total réel pour ces pays, AVANT filtrage capitalisation/liquidité/doublons
     records = records.filter(r => !r.mcap || r.mcap >= state.mcapFloor);
     if(state.liquidityFloor){
@@ -137,6 +147,7 @@ async function runScreening(){
       poolCount: records.length,
       universeCount: universeCount,
       countries: countries,
+      exchanges: byExchange ? [...state.exchanges] : null,
       snapshotGeneratedAt: snap.generatedAt,
       diversificationPct: state.diversificationPct,
       diversificationApplied: diversification.appliedPct,
@@ -276,7 +287,9 @@ function applyStrategyPreset(strat){
   const liqSel = document.getElementById("liquidityFloor");
 
   const lock = !!strat.lockCountries;
-  [zoneWrap, countryWrap].forEach(el=>{ if(el) el.classList.toggle("locked-by-strategy", lock); });
+  if(lock && state.geoMode !== "country") setGeoMode("country");
+  const geoSeg = document.getElementById("geoModeSeg");
+  [zoneWrap, countryWrap, geoSeg].forEach(el=>{ if(el) el.classList.toggle("locked-by-strategy", lock); });
   [mcapSel, liqSel].forEach(el=>{ if(el){ el.disabled = lock; el.classList.toggle("locked-by-strategy", lock); } });
 
   const note = document.getElementById("strategyPresetNote");
@@ -351,15 +364,53 @@ function renderZonesAndCountries(){
     chip.className = "chip";
     chip.textContent = z.label;
     chip.addEventListener("click", ()=>{
-      // toggle: si toutes les countries de la zone sont déjà sélectionnées -> on les retire, sinon on les ajoute
-      const allIn = z.countries.every(c=>state.countries.has(c));
-      z.countries.forEach(c=> allIn ? state.countries.delete(c) : state.countries.add(c));
-      renderCountryList();
+      // toggle: si tous les éléments de la zone sont déjà sélectionnés -> on les retire, sinon on les ajoute
+      // (pays ou places boursières, selon le mode affiché)
+      const set = state.geoMode === "exchange" ? state.exchanges : state.countries;
+      const codes = state.geoMode === "exchange" ? exchangesInZone(z) : z.countries;
+      const allIn = codes.every(c=>set.has(c));
+      codes.forEach(c=> allIn ? set.delete(c) : set.add(c));
+      if(state.geoMode === "exchange") renderExchangeList(); else renderCountryList();
     });
     zoneRow.appendChild(chip);
   });
 
   renderCountryList();
+  renderExchangeList();
+
+  document.getElementById("geoModeSeg").addEventListener("click", e=>{
+    const b = e.target.closest("[data-geo]");
+    if(b) setGeoMode(b.dataset.geo);
+  });
+}
+
+/** Bascule entre filtre par pays et par place boursière. Les deux
+ * sélections sont conservées : revenir à un mode retrouve ses cases. */
+function setGeoMode(mode){
+  state.geoMode = mode;
+  const ex = mode === "exchange";
+  document.querySelectorAll("#geoModeSeg [data-geo]").forEach(b=>b.classList.toggle("on", b.dataset.geo === mode));
+  document.getElementById("countryList").style.display = ex ? "none" : "";
+  document.getElementById("exchangeList").style.display = ex ? "" : "none";
+  document.getElementById("geoCountryLabel").style.display = ex ? "none" : "";
+  document.getElementById("geoExchangeLabel").style.display = ex ? "" : "none";
+}
+
+function renderExchangeList(){
+  const list = document.getElementById("exchangeList");
+  list.innerHTML = "";
+  EXCHANGES.forEach(ex=>{
+    const item = document.createElement("label");
+    item.className = "c-item" + (state.exchanges.has(ex.code) ? " checked":"");
+    item.innerHTML = `<input type="checkbox" ${state.exchanges.has(ex.code)?"checked":""}> ${exchangeFlagHTML(ex)} <span class="ex-name">${ex.name}</span>`;
+    item.querySelector("input").addEventListener("change", (e)=>{
+      if(e.target.checked) state.exchanges.add(ex.code); else state.exchanges.delete(ex.code);
+      item.classList.toggle("checked", e.target.checked);
+      document.getElementById("exchangeCount").textContent = state.exchanges.size;
+    });
+    list.appendChild(item);
+  });
+  document.getElementById("exchangeCount").textContent = state.exchanges.size;
 }
 
 function renderCountryList(){
@@ -450,8 +501,11 @@ function renderResults(){
 
   const strat = STRATEGIES[state.lastRunMeta.strategy];
   title.textContent = `${strat.name} — ${state.lastResults.length} entreprises`;
-  const countryLabel = state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
-  meta.innerHTML = `${state.lastRunMeta.poolCount} titres passés dans le calcul (sur ${state.lastRunMeta.universeCount} au total pour ces pays, avant filtrage capitalisation/liquidité) · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
+  const exList = state.lastRunMeta.exchanges;
+  const countryLabel = exList
+    ? exList.map(code=>{ const ex = EXCHANGES.find(e=>e.code===code); return ex ? `${exchangeFlagHTML(ex)} ${ex.name}` : code; }).join(", ")
+    : state.lastRunMeta.countries.map(c=>flagHTML(c)).join(" ");
+  meta.innerHTML = `${state.lastRunMeta.poolCount} titres passés dans le calcul (sur ${state.lastRunMeta.universeCount} au total pour ${exList ? "ces places" : "ces pays"}, avant filtrage capitalisation/liquidité) · ${countryLabel} · snapshot du ${new Date(state.lastRunMeta.snapshotGeneratedAt).toLocaleString('fr-FR')}`;
 
   if(state.lastRunMeta.diversificationPct){
     if(state.lastRunMeta.diversificationRelaxed){

@@ -7,13 +7,13 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-title" content="Grand Livre">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.35.0"></script>
-<script src="pwa.js?v=7.35.0" defer></script>
+<script src="theme.js?v=7.36.0"></script>
+<script src="pwa.js?v=7.36.0" defer></script>
 <title>Le Grand Livre — Screener Wall Street</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=7.35.0">
+<link rel="stylesheet" href="styles.css?v=7.36.0">
 </head>
 <body>
 
@@ -60,8 +60,16 @@
           <div class="zone-row" id="zoneRow"></div>
         </div>
         <div class="field">
-          <label>Pays inclus (<span id="countryCount">0</span> sélectionnés)</label>
+          <div class="geo-head">
+            <div class="seg geo-seg" id="geoModeSeg" role="group" aria-label="Filtrer par">
+              <button type="button" data-geo="country" class="on">Pays</button>
+              <button type="button" data-geo="exchange">Places boursières</button>
+            </div>
+            <span class="geo-count" id="geoCountryLabel"><span id="countryCount">0</span> pays sélectionné(s)</span>
+            <span class="geo-count" id="geoExchangeLabel" style="display:none;"><span id="exchangeCount">0</span> place(s) sélectionnée(s)</span>
+          </div>
           <div class="country-list" id="countryList"></div>
+          <div class="country-list exchange-list" id="exchangeList" style="display:none;"></div>
         </div>
       </div>
       <div>
@@ -85,6 +93,7 @@
           <label>Liquidité minimum — optionnel, laisser vide = aucun filtre</label>
           <select id="liquidityFloor">
             <option value="" selected>Aucun filtre (défaut)</option>
+            <option value="1000">≥ 1 K / jour (écarte les titres morts)</option>
             <option value="100000">≥ 100 K$ échangés / jour en moyenne</option>
             <option value="500000">≥ 500 K$ / jour</option>
             <option value="1000000">≥ 1 M$ / jour</option>
@@ -160,9 +169,9 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="data.js?v=7.35.0"></script>
-<script src="columns.js?v=7.35.0"></script>
-<script src="portfolio-store.js?v=7.35.0"></script>
-<script src="app.js?v=7.35.0"></script>
+<script src="data.js?v=7.36.0"></script>
+<script src="columns.js?v=7.36.0"></script>
+<script src="portfolio-store.js?v=7.36.0"></script>
+<script src="app.js?v=7.36.0"></script>
 </body>
 </html>

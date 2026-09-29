@@ -45,6 +45,76 @@ const ZONES = [
 
 function countryMeta(code){ return COUNTRIES.find(c=>c.code===code); }
 
+/* Places boursières présentes dans le snapshot, identifiées par le préfixe
+   du symbole TradingView ("EURONEXT:TTE" -> "EURONEXT"). `country` sert au
+   drapeau et au rattachement aux zones ; "EU" pour Euronext, qui couvre
+   plusieurs pays. Une place absente de cette liste reste trouvable via le
+   filtre par pays. */
+const EXCHANGES = [
+  {code:"NYSE",       name:"NYSE",                        country:"US"},
+  {code:"NASDAQ",     name:"Nasdaq",                      country:"US"},
+  {code:"AMEX",       name:"NYSE American",               country:"US"},
+  {code:"CBOE",       name:"Cboe US",                     country:"US"},
+  {code:"OTC",        name:"OTC (hors cote US)",          country:"US"},
+  {code:"TSX",        name:"Toronto (TSX)",               country:"CA"},
+  {code:"TSXV",       name:"TSX Venture",                 country:"CA"},
+  {code:"NEO",        name:"Cboe Canada (NEO)",           country:"CA"},
+  {code:"CSE",        name:"Canadian Securities Exch.",   country:"CA"},
+  {code:"EURONEXT",   name:"Euronext (Paris, Amsterdam, Bruxelles, Lisbonne)", country:"EU"},
+  {code:"XETR",       name:"Xetra",                       country:"DE"},
+  {code:"FWB",        name:"Francfort",                   country:"DE"},
+  {code:"GETTEX",     name:"gettex (Munich)",             country:"DE"},
+  {code:"TRADEGATE",  name:"Tradegate",                   country:"DE"},
+  {code:"LS",         name:"Lang & Schwarz",              country:"DE"},
+  {code:"LSX",        name:"LS Exchange",                 country:"DE"},
+  {code:"SWB",        name:"Stuttgart",                   country:"DE"},
+  {code:"MUN",        name:"Munich",                      country:"DE"},
+  {code:"DUS",        name:"Düsseldorf",                  country:"DE"},
+  {code:"HAM",        name:"Hambourg",                    country:"DE"},
+  {code:"HAN",        name:"Hanovre",                     country:"DE"},
+  {code:"LSE",        name:"London Stock Exchange",       country:"GB"},
+  {code:"LSIN",       name:"Londres — carnet international", country:"GB"},
+  {code:"AQUIS",      name:"Aquis (Londres)",             country:"GB"},
+  {code:"MIL",        name:"Borsa Italiana (Milan)",      country:"IT"},
+  {code:"BME",        name:"Bolsa de Madrid",             country:"ES"},
+  {code:"SIX",        name:"SIX Swiss Exchange",          country:"CH"},
+  {code:"BX",         name:"BX Swiss",                    country:"CH"},
+  {code:"VIE",        name:"Vienne",                      country:"AT"},
+  {code:"OMXSTO",     name:"Nasdaq Stockholm",            country:"SE"},
+  {code:"NGM",        name:"Nordic Growth Market",        country:"SE"},
+  {code:"OMXCOP",     name:"Nasdaq Copenhague",           country:"DK"},
+  {code:"OMXHEX",     name:"Nasdaq Helsinki",             country:"FI"},
+  {code:"OSL",        name:"Oslo Børs",                   country:"NO"},
+  {code:"GPW",        name:"Bourse de Varsovie",          country:"PL"},
+  {code:"NEWCONNECT", name:"NewConnect (Varsovie)",       country:"PL"},
+  {code:"TSE",        name:"Tokyo",                       country:"JP"},
+  {code:"NAG",        name:"Nagoya",                      country:"JP"},
+  {code:"FSE",        name:"Fukuoka",                     country:"JP"},
+  {code:"SAPSE",      name:"Sapporo",                     country:"JP"},
+  {code:"KRX",        name:"Korea Exchange",              country:"KR"},
+  {code:"HKEX",       name:"Hong Kong",                   country:"HK"},
+  {code:"ASX",        name:"Australie (ASX)",             country:"AU"},
+  {code:"SGX",        name:"Singapour (SGX)",             country:"SG"},
+];
+
+/** Place boursière d'un symbole TradingView ("EURONEXT:TTE" -> "EURONEXT"). */
+function exchangeOf(symbol){ return (symbol || "").split(":")[0]; }
+
+/** Places d'une zone : celles dont le pays appartient à la zone
+ * (Euronext rattachée à l'Europe). */
+function exchangesInZone(zone){
+  return EXCHANGES
+    .filter(e => e.country === "EU" ? zone.countries.includes("FR") : zone.countries.includes(e.country))
+    .map(e => e.code);
+}
+
+/** Drapeau d'une place boursière — même rendu que flagHTML(), avec le
+ * drapeau européen pour Euronext. */
+function exchangeFlagHTML(ex){
+  if(ex.country !== "EU") return flagHTML(ex.country);
+  return `<span class="flag-emoji">🇪🇺</span><img class="flag-img" src="https://flagcdn.com/20x15/eu.png" srcset="https://flagcdn.com/40x30/eu.png 2x" width="20" height="15" alt="EU" loading="lazy">`;
+}
+
 // Devise de cotation par pays — miroir de COUNTRY_CURRENCY côté scraper
 // (config.py). Doit rester synchronisé si de nouveaux pays sont ajoutés.
 const COUNTRY_CURRENCY = {

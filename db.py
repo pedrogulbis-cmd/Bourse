@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     div_pay_date_last REAL,
     div_amount_last REAL,
     div_per_share_fy REAL,
+    earnings_yield REAL,
+    book_yield REAL,
+    cf_yield REAL,
+    report_date REAL,
+    div_currency TEXT,
     fetched_at REAL,
     error TEXT
 );
@@ -79,6 +84,11 @@ def _migrate(conn):
                 "div_ex_date_last", "div_pay_date_last", "div_amount_last", "div_per_share_fy"):
         if col not in fcols:
             conn.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} REAL")
+    for col in ("earnings_yield", "book_yield", "cf_yield", "report_date"):
+        if col not in fcols:
+            conn.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} REAL")
+    if "div_currency" not in fcols:
+        conn.execute("ALTER TABLE fundamentals ADD COLUMN div_currency TEXT")
 
 
 @contextmanager
@@ -221,8 +231,9 @@ def upsert_fundamentals(conn, symbol, data, error=None):
             avg_daily_value, analyst_rating, analyst_label, listed_currency,
             div_ex_date_next, div_pay_date_next, div_amount_next,
             div_ex_date_last, div_pay_date_last, div_amount_last, div_per_share_fy,
+            earnings_yield, book_yield, cf_yield, report_date, div_currency,
             fetched_at, error)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(symbol) DO UPDATE SET
              price=excluded.price, mcap=excluded.mcap, pb=excluded.pb,
              pe=excluded.pe, ps=excluded.ps, pcf=excluded.pcf,
@@ -237,6 +248,9 @@ def upsert_fundamentals(conn, symbol, data, error=None):
              div_amount_next=excluded.div_amount_next, div_ex_date_last=excluded.div_ex_date_last,
              div_pay_date_last=excluded.div_pay_date_last, div_amount_last=excluded.div_amount_last,
              div_per_share_fy=excluded.div_per_share_fy,
+             earnings_yield=excluded.earnings_yield, book_yield=excluded.book_yield,
+             cf_yield=excluded.cf_yield, report_date=excluded.report_date,
+             div_currency=excluded.div_currency,
              fetched_at=excluded.fetched_at, error=excluded.error""",
         (
             symbol,
@@ -250,6 +264,8 @@ def upsert_fundamentals(conn, symbol, data, error=None):
             data.get("div_ex_date_next"), data.get("div_pay_date_next"), data.get("div_amount_next"),
             data.get("div_ex_date_last"), data.get("div_pay_date_last"), data.get("div_amount_last"),
             data.get("div_per_share_fy"),
+            data.get("earnings_yield"), data.get("book_yield"), data.get("cf_yield"),
+            data.get("report_date"), data.get("div_currency"),
             time.time(), error,
         ),
     )
@@ -290,6 +306,7 @@ def get_all_fundamentals(conn):
                   f.analyst_rating, f.analyst_label, f.listed_currency,
                   f.div_ex_date_next, f.div_pay_date_next, f.div_amount_next,
                   f.div_ex_date_last, f.div_pay_date_last, f.div_amount_last, f.div_per_share_fy,
+                  f.earnings_yield, f.book_yield, f.cf_yield, f.report_date, f.div_currency,
                   f.fetched_at, f.error
            FROM universe u
            LEFT JOIN fundamentals f ON f.symbol = u.symbol"""

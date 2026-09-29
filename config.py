@@ -37,6 +37,19 @@ TV_MARKETS = {
     "HK": "hongkong",
     "SG": "singapore",
     "KR": "korea",
+    # Ajoutés pour couvrir le même univers que Quant Investing (Chine,
+    # Inde, Grèce, Israël...) — noms de marché vérifiés sur le scanner.
+    "CN": "china",
+    "IN": "india",
+    "TW": "taiwan",
+    "NZ": "newzealand",
+    "GR": "greece",
+    "HU": "hungary",
+    "TR": "turkey",
+    "IL": "israel",
+    "ZA": "rsa",
+    "BR": "brazil",
+    "MX": "mexico",
 }
 
 # code pays -> valeur exacte du champ "country" TradingView (confirmé via
@@ -67,6 +80,15 @@ TV_COUNTRY_NAMES = {
     "HK": "Hong Kong",
     "SG": "Singapore",
     "KR": "South Korea",
+    "CN": "China",
+    "IN": "India",
+    "TW": "Taiwan",
+    "NZ": "New Zealand",
+    "TR": "Turkey",
+    "IL": "Israel",
+    "ZA": "South Africa",
+    "BR": "Brazil",
+    "MX": "Mexico",
     # Pays UE/EEE qu'on ne scrape PAS activement comme marché à part (pas
     # dans TV_MARKETS), mais qu'on doit reconnaître par leur NOM pour
     # classer correctement le domicile réel d'une société qui y est basée
@@ -126,4 +148,7 @@ COUNTRY_CURRENCY = {
     "AT": "EUR", "IE": "EUR", "JP": "JPY", "AU": "AUD", "HK": "HKD",
     "SG": "SGD", "KR": "KRW",
     "PL": "PLN",
+    "CN": "CNY", "IN": "INR", "TW": "TWD", "NZ": "NZD", "GR": "EUR",
+    "HU": "HUF", "TR": "TRY", "IL": "ILS", "ZA": "ZAR", "BR": "BRL",
+    "MX": "MXN",
 }

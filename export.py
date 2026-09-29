@@ -70,6 +70,15 @@ def _build_records(conn):
             "analystRating": r.get("analyst_rating"),
             "analystLabel": r.get("analyst_label"),
         })
+        # Rendements servant au classement de valeur (négatifs conservés) et
+        # date de la dernière publication de résultats — omis si inconnus.
+        extra = {
+            "ey": r.get("earnings_yield"),
+            "by": r.get("book_yield"),
+            "cfy": r.get("cf_yield"),
+            "reportDate": r.get("report_date"),
+        }
+        records[-1].update({k: v for k, v in extra.items() if v is not None})
         # Calendrier des dividendes — n'ajoute que les champs renseignés
         # (la majorité des titres n'ont pas de dividende annoncé) pour ne
         # pas alourdir inutilement un snapshot déjà découpé en parties.
@@ -82,6 +91,10 @@ def _build_records(conn):
             "divAmountLast": r.get("div_amount_last"),
             "divPerShareFy": r.get("div_per_share_fy"),
         }
+        # Devise des montants de dividende, seulement quand elle diffère de
+        # la devise de cotation (taux de change manquant -> restés en USD).
+        if r.get("div_currency") and r.get("div_currency") != r.get("listed_currency"):
+            div["divCurrency"] = r.get("div_currency")
         records[-1].update({k: v for k, v in div.items() if v is not None})
     return records, skipped
 

@@ -6,9 +6,65 @@ tradingview-screener. Remplace l'ancienne architecture en deux temps
 fondamentaux) — beaucoup plus rapide et beaucoup plus propre : le filtre
 "is_primary" intégré à la librairie exclut nativement les cross-listings.
 """
+import json
+import os
+
 from tradingview_screener import Query, col
 
 from config import TV_MARKETS, TV_COUNTRY_NAMES, MAX_UNIVERSE_PER_COUNTRY
+
+# Tous les montants financiers (capitalisation, bénéfice, EBITDA, valeur
+# d'entreprise, capitaux propres, cash-flow, dividendes par action) sont
+# demandés à TradingView EN DOLLARS, quel que soit le marché. Sans cette
+# option, le scanner d'un marché renvoie la devise locale (yens, wons...),
+# alors que la requête groupée Euronext renvoyait des dollars : un même
+# seuil « ≥ 1 Md$ » laissait passer au Japon des sociétés de 6 M$.
+# Le COURS, lui, reste dans la devise de cotation (non converti).
+USD_CONVERSION = {"to_currency": "usd"}
+
+# Sous-unités de cotation : cours exprimé en centièmes de la devise.
+SUBUNITS = {"GBX": ("GBP", 100), "ILA": ("ILS", 100), "ZAC": ("ZAR", 100)}
+
+
+def _load_fx():
+    """Taux devise -> EUR (fx-rates.json, mis à jour chaque jour par
+    fetch_fx_rates.py). Sert à convertir en dollars ce que TradingView
+    laisse en devise locale : le volume échangé (cours × titres)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fx-rates.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("rates") or {}
+    except Exception:
+        return {}
+
+
+FX_TO_EUR = _load_fx()
+
+
+def _num(v):
+    """Nombre ou None — les cellules vides du DataFrame arrivent en NaN,
+    qui n'est pas None et fausserait les replis (« si absent, prendre... »)."""
+    if v is None:
+        return None
+    try:
+        return None if v != v else v  # NaN != NaN
+    except Exception:
+        return None
+
+
+def usd_per_unit(currency):
+    """Valeur en dollars d'une unité de `currency` (ex. 1 JPY -> 0,0064),
+    ou None si le taux est inconnu."""
+    if not currency:
+        return None
+    div = 1
+    if currency in SUBUNITS:
+        currency, div = SUBUNITS[currency]
+    to_eur = 1.0 if currency == "EUR" else FX_TO_EUR.get(currency)
+    usd_to_eur = FX_TO_EUR.get("USD")
+    if to_eur is None or not usd_to_eur:
+        return None
+    return to_eur / usd_to_eur / div
 
 # Pays dont la bourse principale est un segment national d'Euronext. Une
 # société peut être domiciliée dans l'un de ces pays mais cotée sur le
@@ -48,7 +104,15 @@ FIELDS = [
     "price_earnings_ttm",                      # P/E
     "price_book_fq",                           # P/B
     "price_sales_current",                     # P/S — NOM DE CHAMP NON CONFIRMÉ, à vérifier au premier run
-    "enterprise_value_ebitda_ttm",              # EV/EBITDA (inversé -> EBITDA/EV)
+    "enterprise_value_ebitda_ttm",              # EV/EBITDA (repli si EBITDA ou EV manquent)
+    "ebitda_ttm",                               # EBITDA (USD) — peut être négatif
+    "enterprise_value_current",                 # valeur d'entreprise (USD)
+    "net_income_ttm",                           # bénéfice net (USD) — négatif pour une société en perte
+    "total_equity_fq",                          # capitaux propres (USD) — négatifs si fonds propres négatifs
+    "cash_f_operating_activities_ttm",          # cash-flow d'exploitation 12 mois glissants (USD)
+    "cash_f_operating_activities_fy",           # idem, dernier exercice — repli quand le glissant manque (Japon...)
+    "earnings_release_date",                    # date de la dernière publication de résultats (timestamp Unix)
+    "total_shares_outstanding",                 # nombre d'actions — repli pour convertir le volume en dollars
     "dividends_yield_current",                  # rendement du dividende (%) — "dividend_yield_recent" renvoie désormais null pour tous les titres
     "ex_dividend_date_upcoming",                # prochaine date de détachement (timestamp Unix, null si non annoncée)
     "dividend_payment_date_upcoming",           # prochaine date de paiement
@@ -74,8 +138,47 @@ def _row_to_record(row, country_code):
     """Convertit une ligne de résultat TradingView en dict prêt pour la base.
     `country_code` est le code pays à ENREGISTRER (peut différer du marché
     interrogé — voir fetch_euronext_bucket)."""
-    ev_ebitda = row.get("enterprise_value_ebitda_ttm")
-    ebitda_yield = (1.0 / ev_ebitda) if ev_ebitda and ev_ebitda > 0 else None
+    mcap = _num(row.get("market_cap_basic"))  # USD
+    price = _num(row.get("close"))            # devise de cotation
+    currency = row.get("currency") or None
+
+    # Rendements « à l'envers » des ratios de valeur, calculés à partir des
+    # montants bruts pour GARDER LES VALEURS NÉGATIVES. TradingView renvoie
+    # un P/E vide pour une société en perte : notée neutre (50) jusqu'ici,
+    # elle doit au contraire recevoir la pire note, comme dans le livre et
+    # chez Quant Investing. Classer E/P, B/P, CF/P du plus haut au plus bas
+    # place naturellement les valeurs négatives en queue.
+    def per_mcap(v):
+        return (v / mcap) if (v is not None and mcap) else None
+
+    net_income = _num(row.get("net_income_ttm"))
+    equity = _num(row.get("total_equity_fq"))
+    ocf = _num(row.get("cash_f_operating_activities_ttm"))
+    if ocf is None:
+        ocf = _num(row.get("cash_f_operating_activities_fy"))
+    earnings_yield = per_mcap(net_income)
+    book_yield = per_mcap(equity)
+    cf_yield = per_mcap(ocf)
+    pcf = (mcap / ocf) if (mcap and ocf and ocf > 0) else None
+
+    ebitda = _num(row.get("ebitda_ttm"))
+    ev = _num(row.get("enterprise_value_current"))
+    if ebitda is not None and ev and ev > 0:
+        ebitda_yield = ebitda / ev          # négatif si EBITDA négatif -> pire note
+    else:
+        ev_ebitda = _num(row.get("enterprise_value_ebitda_ttm"))
+        ebitda_yield = (1.0 / ev_ebitda) if ev_ebitda and ev_ebitda > 0 else None
+
+    # Dividendes par action : renvoyés en dollars par la conversion ; on les
+    # ramène dans la devise de cotation pour l'affichage et le calcul du
+    # portefeuille. Sans taux connu, on les garde en dollars (div_currency).
+    fx_unit = usd_per_unit(currency)
+    div_currency = currency if fx_unit else "USD"
+    def div_local(v):
+        v = _num(v)
+        if v is None:
+            return None
+        return v / fx_unit if fx_unit else v
 
     div_yield = row.get("dividends_yield_current")
     div_yield = (div_yield / 100.0) if div_yield is not None else None
@@ -99,9 +202,15 @@ def _row_to_record(row, country_code):
     revenue_growth = row.get("total_revenue_yoy_growth_fy")
     revenue_growth = (revenue_growth / 100.0) if revenue_growth is not None else None
 
-    avg_volume = row.get("average_volume_30d_calc")
-    price = row.get("close")
-    avg_daily_value = (avg_volume * price) if (avg_volume is not None and price is not None) else None
+    # Liquidité en dollars : volume (nombre de titres) × cours (devise de
+    # cotation) × taux. Repli sans taux : dollars par unité de cours déduits
+    # de la capitalisation (USD) / (cours × nombre d'actions).
+    avg_volume = _num(row.get("average_volume_30d_calc"))
+    shares = _num(row.get("total_shares_outstanding"))
+    unit = fx_unit
+    if unit is None and mcap and price and shares:
+        unit = mcap / (price * shares)
+    avg_daily_value = (avg_volume * price * unit) if (avg_volume is not None and price is not None and unit) else None
 
     analyst_rating = row.get("recommendation_mark")  # échelle 1 (Strong Buy) à 5 (Strong Sell)
     analyst_label = None
@@ -119,11 +228,11 @@ def _row_to_record(row, country_code):
         "sector": row.get("sector") or "—",
         "country": country_code,
         "price": row.get("close"),
-        "mcap": row.get("market_cap_basic"),
+        "mcap": mcap,
         "pe": row.get("price_earnings_ttm"),
         "pb": row.get("price_book_fq"),
         "ps": row.get("price_sales_current"),
-        "pcf": None,  # pas de champ P/CF confirmé côté TradingView pour l'instant
+        "pcf": pcf,
         "ebitda_yield": ebitda_yield,
         "div_yield": div_yield,
         "buyback_yield": buyback_yield,
@@ -139,13 +248,18 @@ def _row_to_record(row, country_code):
         "analyst_label": analyst_label,
         "home_country": row.get("country") or None,  # nom brut TradingView, ex. "Bermuda" — pour affichage uniquement
         "home_country_code": NAME_TO_COUNTRY_CODE.get(row.get("country")),  # None si pays hors de notre liste (ex. Bermudes)
+        "earnings_yield": earnings_yield,
+        "book_yield": book_yield,
+        "cf_yield": cf_yield,
+        "report_date": row.get("earnings_release_date"),
         "div_ex_date_next": row.get("ex_dividend_date_upcoming"),
         "div_pay_date_next": row.get("dividend_payment_date_upcoming"),
-        "div_amount_next": row.get("dividend_amount_upcoming"),
+        "div_amount_next": div_local(row.get("dividend_amount_upcoming")),
         "div_ex_date_last": row.get("ex_dividend_date_recent"),
         "div_pay_date_last": row.get("dividend_payment_date_recent"),
-        "div_amount_last": row.get("dividend_amount_recent"),
-        "div_per_share_fy": row.get("dps_common_stock_prim_issue_fy"),
+        "div_amount_last": div_local(row.get("dividend_amount_recent")),
+        "div_per_share_fy": div_local(row.get("dps_common_stock_prim_issue_fy")),
+        "div_currency": div_currency,
         "listed_currency": row.get("currency") or None,  # devise RÉELLE du prix affiché (ex. "GBX" pour du GB coté en pence) — prioritaire sur la devise déduite du pays côté site
     }
 
@@ -172,6 +286,7 @@ def fetch_country_stocks(country_code, mcap_floor, max_results=MAX_UNIVERSE_PER_
         .where(col("market_cap_basic") >= mcap_floor)
         .limit(max_results)
         .order_by("market_cap_basic", ascending=False)
+        .set_property("price_conversion", USD_CONVERSION)
     )
 
     total, df = query.get_scanner_data()
@@ -218,6 +333,7 @@ def fetch_euronext_bucket(mcap_floor, max_results=MAX_UNIVERSE_PER_COUNTRY, debu
         .where(col("market_cap_basic") >= mcap_floor)
         .limit(max_results * len(markets))
         .order_by("market_cap_basic", ascending=False)
+        .set_property("price_conversion", USD_CONVERSION)
     )
 
     total, df = query.get_scanner_data()

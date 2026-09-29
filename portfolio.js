@@ -191,15 +191,19 @@ async function loadFxRates(){
  * est inconnu (fx-rates.json absent, ou devise non couverte), retourne le
  * montant TEL QUEL (repli permissif — mieux vaut un total légèrement faux
  * mais visible que masquer une position entière). */
+/* Cours cotés en centièmes de devise : pence (GBX), agorot israéliens
+   (ILA), cents sud-africains (ZAC). Pas de taux propre : dérivé du taux de
+   la devise principale (1 GBP = 100 GBX...). */
+const FX_SUBUNITS = { GBX:["GBP",100], ILA:["ILS",100], ZAC:["ZAR",100] };
+
 function toEUR(amount, currency, fxRates){
   if(amount == null) return null;
   if(!currency || currency === "EUR") return amount;
-  // GBX (pence sterling) n'a pas son propre taux fetché — dérivé du taux
-  // GBP (1 GBP = 100 GBX), pour éviter d'avoir à interroger une devise de
-  // plus côté scraper.
-  if(currency === "GBX"){
-    if(!fxRates || fxRates["GBP"] == null) return amount / 100; // repli grossier si même le taux GBP manque
-    return (amount / 100) * fxRates["GBP"];
+  if(FX_SUBUNITS[currency]){
+    const [main, div] = FX_SUBUNITS[currency];
+    if(main === "EUR") return amount / div;
+    if(!fxRates || fxRates[main] == null) return amount / div; // repli grossier si même le taux principal manque
+    return (amount / div) * fxRates[main];
   }
   if(!fxRates || fxRates[currency] == null) return amount;
   return amount * fxRates[currency];
@@ -210,7 +214,7 @@ function toEUR(amount, currency, fxRates){
  * sert à afficher un avertissement visible plutôt qu'un "€" trompeur. */
 function fxRateAvailable(currency, fxRates){
   if(!currency || currency === "EUR") return true;
-  if(currency === "GBX") return !!(fxRates && fxRates["GBP"] != null);
+  if(FX_SUBUNITS[currency]) return !!(fxRates && fxRates[FX_SUBUNITS[currency][0]] != null);
   return !!(fxRates && fxRates[currency] != null);
 }
 
@@ -245,7 +249,10 @@ function computeDividendInfo(h, live, currency, fxRates, hist){
   if(!live && !hist) return null;
   live = live || {};
   const today = new Date().toISOString().slice(0,10);
-  const total = amt => amt!=null ? toEUR(h.quantity * amt, currency, fxRates) : null;
+  // Montants par action du snapshot : dans la devise de cotation, sauf
+  // s'ils sont restés en dollars faute de taux de change (divCurrency).
+  const divCcy = live.divCurrency || currency;
+  const total = amt => amt!=null ? toEUR(h.quantity * amt, divCcy, fxRates) : null;
 
   let next = null;
   const nextEx = unixToISODate(live.divExNext);
@@ -253,7 +260,7 @@ function computeDividendInfo(h, live, currency, fxRates, hist){
   // Ignore un "prochain" versement déjà entièrement payé (snapshot en retard).
   if((nextEx || nextPay) && !(nextPay && nextPay < today)){
     const eligible = !h.purchaseDate || !nextEx || h.purchaseDate < nextEx;
-    next = { exDate: nextEx, payDate: nextPay, perShare: live.divAmountNext ?? null,
+    next = { exDate: nextEx, payDate: nextPay, perShare: live.divAmountNext ?? null, currency: divCcy,
              totalEUR: total(live.divAmountNext), detached: !!(nextEx && nextEx <= today), eligible };
   }
 
@@ -280,7 +287,7 @@ function computeDividendInfo(h, live, currency, fxRates, hist){
   }
 
   const annualEUR = live.divPerShareFy!=null ? total(live.divPerShareFy) : null;
-  return { next, last, annualEUR, perShareFy: live.divPerShareFy ?? null, received, receivedEUR, estimated };
+  return { next, last, annualEUR, perShareFy: live.divPerShareFy ?? null, divCurrency: divCcy, received, receivedEUR, estimated };
 }
 
 /**
@@ -298,7 +305,7 @@ function computeHoldingsRows(holdings, snap, fxRates, divHistory){
     const live = bySymbol[h.symbol];
     const currentPrice = live ? live.price : null;
     const currency = resolveListedCurrency(live || h);
-    if(currency !== "EUR" && (!fxRates || (currency !== "GBX" && fxRates[currency] == null) || (currency === "GBX" && fxRates["GBP"] == null))) missingFx.add(currency);
+    if(!fxRateAvailable(currency, fxRates)) missingFx.add(currency);
 
     const purchaseCcy = h.priceCurrency || currency;
     const costBasisNative = h.quantity * h.purchasePrice;
@@ -807,7 +814,7 @@ async function openCloseoutModal(){
 
 function openCashModal(cashId){
   const existing = cashId ? pfGetCash().find(c=>c.id===cashId) : null;
-  const currencies = ["EUR","USD","GBP","GBX","CHF","JPY","CAD","AUD","HKD","SGD","KRW","SEK","DKK","NOK","PLN"];
+  const currencies = ["EUR","USD","GBP","GBX","CHF","JPY","CAD","AUD","HKD","SGD","KRW","SEK","DKK","NOK","PLN","CNY","INR","TWD","NZD","HUF","TRY","ILS","ILA","ZAR","ZAC","BRL","MXN"];
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
@@ -903,14 +910,14 @@ function buildHoldingDetail(r){
       const perShare = (v, c=r.currency) => v==null ? "—" : `${n(v,4)} ${unit(c)}`;
       let nextTxt = "non annoncé";
       if(d.next){
-        nextTxt = d.next.perShare!=null ? `${perShare(d.next.perShare)} / action` : "montant inconnu";
+        nextTxt = d.next.perShare!=null ? `${perShare(d.next.perShare, d.next.currency)} / action` : "montant inconnu";
         if(d.next.totalEUR!=null) nextTxt += ` · ${fmtEUR(d.next.totalEUR)} pour toi`;
         if(!d.next.eligible) nextTxt += " (non éligible : acheté après le détachement)";
       }
       const divItems = [
         ["Prochain dividende", nextTxt],
         ["Détachement / paiement", d.next ? `${fmtDateFR(d.next.exDate)} / ${fmtDateFR(d.next.payDate)}` : "—"],
-        ["Dividende annuel / action", perShare(d.perShareFy)],
+        ["Dividende annuel / action", perShare(d.perShareFy, d.divCurrency)],
         ["Perçus depuis l'achat (brut)", d.received.length ? `${fmtEUR(d.receivedEUR)} · ${d.received.length} versement${d.received.length>1?'s':''}` : "aucun"],
         ["Rendement total", r.totalReturn!=null ? `${fmtEUR(r.totalReturn)} (${fmtPctSigned(r.totalReturnPct)})` : "—"],
       ];
@@ -2072,7 +2079,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.36.0";
+  if(versionEl) versionEl.textContent = "v7.37.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

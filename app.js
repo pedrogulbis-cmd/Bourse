@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.36.0";
+const APP_VERSION = "v7.37.0";
 
 let state = {
   strategy: "trending_value",
@@ -16,6 +16,7 @@ let state = {
   resultCount: 25,
   mcapFloor: 1000000000,
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
+  reportMaxMonths: null, // optionnel — écarte les titres dont les derniers résultats publiés datent de plus de N mois
   diversificationPct: null, // optionnel — null = aucun plafond par pays
   peaOnly: false, // filtre éligibilité PEA (domicile UE/EEE)
   excludeCrossListed: false, // exclut les titres dont le domicile réel diffère du pays de cotation (badge 🌐)
@@ -46,22 +47,30 @@ function percentileRank(value, sortedAsc, betterWhenLower){
 }
 
 function scorePool(records){
+  // P/E, P/B et P/CF sont classés via leur inverse (bénéfice/cours,
+  // fonds propres/cours, cash-flow/cours), calculé par le scraper à partir
+  // des montants bruts : une société en perte ou à fonds propres négatifs y
+  // a une valeur NÉGATIVE et reçoit donc la pire note — comme dans le livre
+  // et chez Quant Investing. Avant, TradingView renvoyant un P/E vide pour
+  // une société en perte, elle recevait la note neutre (50).
+  // Repli sur 1/ratio pour un ancien snapshot sans ces champs.
+  const inv = v => (v != null && v > 0) ? 1 / v : null;
   const factorDefs = [
-    {key:"pb", lower:true},
-    {key:"pe", lower:true},
-    {key:"ps", lower:true},
-    {key:"pcf", lower:true},
-    {key:"ebitdaYield", lower:false},
-    {key:"shareholderYield", lower:false},
+    {key:"pb", get:r => r.by  != null ? r.by  : inv(r.pb),  lower:false},
+    {key:"pe", get:r => r.ey  != null ? r.ey  : inv(r.pe),  lower:false},
+    {key:"ps", get:r => r.ps, lower:true},
+    {key:"pcf", get:r => r.cfy != null ? r.cfy : inv(r.pcf), lower:false},
+    {key:"ebitdaYield", get:r => r.ebitdaYield, lower:false},
+    {key:"shareholderYield", get:r => r.shareholderYield, lower:false},
   ];
   const sortedByFactor = {};
   factorDefs.forEach(f=>{
-    sortedByFactor[f.key] = records.map(r=>r[f.key]).filter(v=>v!==null && v!==undefined).sort((a,b)=>a-b);
+    sortedByFactor[f.key] = records.map(f.get).filter(v=>v!==null && v!==undefined).sort((a,b)=>a-b);
   });
   records.forEach(rec=>{
     let sum = 0;
     factorDefs.forEach(f=>{
-      const rank = percentileRank(rec[f.key], sortedByFactor[f.key], f.lower);
+      const rank = percentileRank(f.get(rec), sortedByFactor[f.key], f.lower);
       rec["rank_"+f.key] = rank;
       sum += rank;
     });
@@ -106,6 +115,11 @@ async function runScreening(){
       // veut pas punir un titre juste parce que la donnée manque, seulement
       // écarter ceux dont on SAIT qu'ils sont peu liquides.
       records = records.filter(r => r.avgDailyValue == null || r.avgDailyValue >= state.liquidityFloor);
+    }
+    if(state.reportMaxMonths){
+      // Comme pour la liquidité, un titre sans date connue n'est pas exclu.
+      const cutoff = Date.now()/1000 - state.reportMaxMonths * 30.44 * 86400;
+      records = records.filter(r => r.reportDate == null || r.reportDate >= cutoff);
     }
     if(state.peaOnly){
       records = records.filter(r => isPeaEligible(r));
@@ -363,14 +377,17 @@ function renderZonesAndCountries(){
     const chip = document.createElement("div");
     chip.className = "chip";
     chip.textContent = z.label;
+    chip.dataset.zone = z.id;
     chip.addEventListener("click", ()=>{
-      // toggle: si tous les éléments de la zone sont déjà sélectionnés -> on les retire, sinon on les ajoute
-      // (pays ou places boursières, selon le mode affiché)
-      const set = state.geoMode === "exchange" ? state.exchanges : state.countries;
-      const codes = state.geoMode === "exchange" ? exchangesInZone(z) : z.countries;
-      const allIn = codes.every(c=>set.has(c));
-      codes.forEach(c=> allIn ? set.delete(c) : set.add(c));
-      if(state.geoMode === "exchange") renderExchangeList(); else renderCountryList();
+      // Une zone REMPLACE la sélection (Monde puis Europe -> Europe seule).
+      // Re-cliquer la zone déjà active vide la sélection. Pour combiner des
+      // zones ou des pays, cocher ensuite les cases de la liste.
+      const ex = state.geoMode === "exchange";
+      const codes = ex ? exchangesInZone(z) : z.countries;
+      const active = zoneIsActive(z);
+      const next = new Set(active ? [] : codes);
+      if(ex) state.exchanges = next; else state.countries = next;
+      if(ex) renderExchangeList(); else renderCountryList();
     });
     zoneRow.appendChild(chip);
   });
@@ -386,6 +403,20 @@ function renderZonesAndCountries(){
 
 /** Bascule entre filtre par pays et par place boursière. Les deux
  * sélections sont conservées : revenir à un mode retrouve ses cases. */
+/** Une zone est « active » quand la sélection correspond exactement à ses éléments. */
+function zoneIsActive(z){
+  const ex = state.geoMode === "exchange";
+  const set = ex ? state.exchanges : state.countries;
+  const codes = ex ? exchangesInZone(z) : z.countries;
+  return codes.length > 0 && set.size === codes.length && codes.every(c=>set.has(c));
+}
+function refreshZoneChips(){
+  document.querySelectorAll("#zoneRow .chip").forEach(chip=>{
+    const z = ZONES.find(x=>x.id === chip.dataset.zone);
+    chip.classList.toggle("on", !!z && zoneIsActive(z));
+  });
+}
+
 function setGeoMode(mode){
   state.geoMode = mode;
   const ex = mode === "exchange";
@@ -394,6 +425,7 @@ function setGeoMode(mode){
   document.getElementById("exchangeList").style.display = ex ? "" : "none";
   document.getElementById("geoCountryLabel").style.display = ex ? "none" : "";
   document.getElementById("geoExchangeLabel").style.display = ex ? "" : "none";
+  refreshZoneChips();
 }
 
 function renderExchangeList(){
@@ -407,10 +439,12 @@ function renderExchangeList(){
       if(e.target.checked) state.exchanges.add(ex.code); else state.exchanges.delete(ex.code);
       item.classList.toggle("checked", e.target.checked);
       document.getElementById("exchangeCount").textContent = state.exchanges.size;
+      refreshZoneChips();
     });
     list.appendChild(item);
   });
   document.getElementById("exchangeCount").textContent = state.exchanges.size;
+  refreshZoneChips();
 }
 
 function renderCountryList(){
@@ -424,10 +458,12 @@ function renderCountryList(){
       if(e.target.checked) state.countries.add(c.code); else state.countries.delete(c.code);
       item.classList.toggle("checked", e.target.checked);
       document.getElementById("countryCount").textContent = state.countries.size;
+      refreshZoneChips();
     });
     list.appendChild(item);
   });
   document.getElementById("countryCount").textContent = state.countries.size;
+  refreshZoneChips();
 }
 
 function renderNPicker(){
@@ -583,7 +619,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">Secteur</div><div class="v">${s.sector}</div></div>
         <div class="detail-item"><div class="k">Bourse</div><div class="v">${s.exchange||'—'}</div></div>
         <div class="detail-item"><div class="k">Prix</div><div class="v">${fmtNum(s.price,2)}</div></div>
-        <div class="detail-item"><div class="k">P/E <span class="r">rang ${s.rank_pe}</span></div><div class="v">${fmtNum(s.pe)}</div></div>
+        <div class="detail-item"><div class="k">P/E <span class="r">rang ${s.rank_pe}</span></div><div class="v">${s.pe==null && s.ey!=null && s.ey<0 ? "perte" : fmtNum(s.pe)}</div></div>
         <div class="detail-item"><div class="k">P/B <span class="r">rang ${s.rank_pb}</span></div><div class="v">${fmtNum(s.pb)}</div></div>
         <div class="detail-item"><div class="k">P/S <span class="r">rang ${s.rank_ps}</span></div><div class="v">${fmtNum(s.ps)}</div></div>
         <div class="detail-item"><div class="k">P/CF <span class="r">rang ${s.rank_pcf}</span></div><div class="v">${fmtNum(s.pcf)}</div></div>
@@ -728,6 +764,10 @@ function init(){
 
   document.getElementById("liquidityFloor").addEventListener("change", (e)=>{
     state.liquidityFloor = e.target.value ? parseInt(e.target.value,10) : null;
+  });
+
+  document.getElementById("reportMaxMonths").addEventListener("change", (e)=>{
+    state.reportMaxMonths = e.target.value ? parseInt(e.target.value,10) : null;
   });
 
   document.getElementById("diversificationPct").addEventListener("change", (e)=>{

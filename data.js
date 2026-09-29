@@ -31,12 +31,27 @@ const COUNTRIES = [
   {code:"HK", name:"Hong Kong", flag:"🇭🇰", zone:"apac"},
   {code:"SG", name:"Singapour", flag:"🇸🇬", zone:"apac"},
   {code:"KR", name:"Corée du Sud", flag:"🇰🇷", zone:"apac"},
+  {code:"CN", name:"Chine", flag:"🇨🇳", zone:"apac"},
+  {code:"IN", name:"Inde", flag:"🇮🇳", zone:"apac"},
+  {code:"TW", name:"Taïwan", flag:"🇹🇼", zone:"apac"},
+  {code:"NZ", name:"Nouvelle-Zélande", flag:"🇳🇿", zone:"apac"},
+  {code:"GR", name:"Grèce", flag:"🇬🇷", zone:"eu"},
+  {code:"HU", name:"Hongrie", flag:"🇭🇺", zone:"eu"},
+  {code:"TR", name:"Turquie", flag:"🇹🇷", zone:"eu"},
+  {code:"IL", name:"Israël", flag:"🇮🇱", zone:"mea"},
+  {code:"ZA", name:"Afrique du Sud", flag:"🇿🇦", zone:"mea"},
+  {code:"BR", name:"Brésil", flag:"🇧🇷", zone:"latam"},
+  {code:"MX", name:"Mexique", flag:"🇲🇽", zone:"na"},
 ];
 
 const ZONES = [
-  {id:"na", label:"Amérique du Nord", countries:["US","CA"]},
-  {id:"eu", label:"Europe", countries:["FR","DE","GB","NL","CH","ES","IT","BE","SE","DK","NO","FI","PT","AT","IE","LU","PL"]},
-  {id:"apac", label:"Asie-Pacifique", countries:["JP","AU","HK","SG","KR"]},
+  // Zones dérivées du champ `zone` de COUNTRIES : un pays ajouté rejoint
+  // automatiquement sa zone.
+  {id:"na", label:"Amérique du Nord", countries: COUNTRIES.filter(c=>c.zone==="na").map(c=>c.code)},
+  {id:"latam", label:"Amérique du Sud", countries: COUNTRIES.filter(c=>c.zone==="latam").map(c=>c.code)},
+  {id:"eu", label:"Europe", countries: COUNTRIES.filter(c=>c.zone==="eu").map(c=>c.code)},
+  {id:"apac", label:"Asie-Pacifique", countries: COUNTRIES.filter(c=>c.zone==="apac").map(c=>c.code)},
+  {id:"mea", label:"Moyen-Orient & Afrique", countries: COUNTRIES.filter(c=>c.zone==="mea").map(c=>c.code)},
   // Dérivée automatiquement de TOUS les pays de COUNTRIES, plutôt qu'une
   // liste codée en dur — évite de l'oublier à jour à chaque nouveau pays
   // ajouté (elle ne contenait plus que 12 pays sur les 22 disponibles).
@@ -95,6 +110,21 @@ const EXCHANGES = [
   {code:"HKEX",       name:"Hong Kong",                   country:"HK"},
   {code:"ASX",        name:"Australie (ASX)",             country:"AU"},
   {code:"SGX",        name:"Singapour (SGX)",             country:"SG"},
+  {code:"SSE",        name:"Shanghai",                    country:"CN"},
+  {code:"SZSE",       name:"Shenzhen",                    country:"CN"},
+  {code:"NSE",        name:"Inde (NSE)",                  country:"IN"},
+  {code:"BSE",        name:"Bombay (BSE)",                country:"IN"},
+  {code:"TWSE",       name:"Taïwan (TWSE)",               country:"TW"},
+  {code:"TPEX",       name:"Taïwan (TPEx)",               country:"TW"},
+  {code:"NZX",        name:"Nouvelle-Zélande (NZX)",      country:"NZ"},
+  {code:"ATHEX",      name:"Athènes",                     country:"GR"},
+  {code:"BET",        name:"Budapest",                    country:"HU"},
+  {code:"BIST",       name:"Istanbul",                    country:"TR"},
+  {code:"TASE",       name:"Tel-Aviv",                    country:"IL"},
+  {code:"JSE",        name:"Johannesburg",                country:"ZA"},
+  {code:"BMFBOVESPA", name:"São Paulo (B3)",              country:"BR"},
+  {code:"BMV",        name:"Mexico (BMV)",                country:"MX"},
+  {code:"BIVA",       name:"Mexico (BIVA)",               country:"MX"},
 ];
 
 /** Place boursière d'un symbole TradingView ("EURONEXT:TTE" -> "EURONEXT"). */
@@ -123,6 +153,8 @@ const COUNTRY_CURRENCY = {
   SE:"SEK", DK:"DKK", NO:"NOK", FI:"EUR", PT:"EUR",
   AT:"EUR", IE:"EUR", LU:"EUR", JP:"JPY", AU:"AUD", HK:"HKD",
   SG:"SGD", KR:"KRW", PL:"PLN",
+  CN:"CNY", IN:"INR", TW:"TWD", NZ:"NZD", GR:"EUR", HU:"HUF",
+  TR:"TRY", IL:"ILS", ZA:"ZAR", BR:"BRL", MX:"MXN",
 };
 function currencyForCountry(code){ return COUNTRY_CURRENCY[code] || "EUR"; }
 

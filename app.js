@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.38.0";
+const APP_VERSION = "v7.39.0";
 
 let state = {
   strategy: "trending_value",
@@ -797,6 +797,159 @@ function toast(msg){
 // ---------------------------------------------------------------
 // init
 // ---------------------------------------------------------------
+// ---------------------------------------------------------------
+// Réglages du screener : sauvegarde automatique + réglages nommés
+// ---------------------------------------------------------------
+// Les réglages en cours sont enregistrés à chaque modification et
+// restaurés à l'ouverture de la page. On peut aussi les enregistrer sous
+// un nom pour les rappeler en un clic. Stockage : localStorage, donc
+// propre à ce navigateur (comme le portefeuille).
+const SCREENER_STATE_KEY = "lgl_screener_state_v1";
+const SCREENER_PRESETS_KEY = "lgl_screener_presets_v1";
+
+/** Instantané des réglages (les Set deviennent des tableaux triés, pour
+ * pouvoir comparer deux réglages et savoir lequel est actif). */
+function getScreenerSettings(){
+  return {
+    strategy: state.strategy,
+    geoMode: state.geoMode,
+    countries: [...state.countries].sort(),
+    exchanges: [...state.exchanges].sort(),
+    resultCount: state.resultCount,
+    mcapFloor: state.mcapFloor,
+    liquidityFloor: state.liquidityFloor,
+    diversificationPct: state.diversificationPct,
+    peaOnly: state.peaOnly,
+    excludeCrossListed: state.excludeCrossListed,
+    quantInvesting: state.quantInvesting,
+  };
+}
+
+/** Applique des réglages à l'état ET à l'interface. Les valeurs absentes
+ * (réglage enregistré avec une version plus ancienne) gardent leur valeur
+ * actuelle ; les pays / places / stratégies qui n'existent plus sont ignorés. */
+function applyScreenerSettings(s){
+  if(!s) return;
+  if(s.strategy && STRATEGIES[s.strategy]) state.strategy = s.strategy;
+  if(s.geoMode === "country" || s.geoMode === "exchange") state.geoMode = s.geoMode;
+  if(Array.isArray(s.countries)) state.countries = new Set(s.countries.filter(c=>COUNTRIES.some(x=>x.code===c)));
+  if(Array.isArray(s.exchanges)) state.exchanges = new Set(s.exchanges.filter(c=>EXCHANGES.some(x=>x.code===c)));
+  if(s.resultCount) state.resultCount = s.resultCount;
+  if(s.mcapFloor != null) state.mcapFloor = s.mcapFloor;
+  if("liquidityFloor" in s) state.liquidityFloor = s.liquidityFloor;
+  if("diversificationPct" in s) state.diversificationPct = s.diversificationPct;
+  ["peaOnly","excludeCrossListed","quantInvesting"].forEach(k=>{ if(k in s) state[k] = !!s[k]; });
+
+  document.querySelectorAll(".strategy-card").forEach(el=>el.classList.toggle("active", el.dataset.id === state.strategy));
+  renderCountryList();
+  renderExchangeList();
+  setGeoMode(state.geoMode);
+  renderNPicker();
+  const setSel = (id, v)=>{ const el = document.getElementById(id); if(el) el.value = v == null ? "" : String(v); };
+  setSel("mcapFloor", state.mcapFloor);
+  setSel("liquidityFloor", state.liquidityFloor);
+  setSel("diversificationPct", state.diversificationPct);
+  ["peaOnly","excludeCrossListed","quantInvesting"].forEach(id=>{ const el = document.getElementById(id); if(el) el.checked = state[id]; });
+  // Une stratégie indicielle réimpose (et verrouille) ses propres filtres.
+  applyStrategyPreset(STRATEGIES[state.strategy]);
+}
+
+function saveScreenerState(){
+  try{ localStorage.setItem(SCREENER_STATE_KEY, JSON.stringify(getScreenerSettings())); }catch(e){}
+  renderPresetChips();
+}
+function loadScreenerState(){
+  try{ return JSON.parse(localStorage.getItem(SCREENER_STATE_KEY) || "null"); }catch(e){ return null; }
+}
+
+function loadPresets(){
+  try{
+    const list = JSON.parse(localStorage.getItem(SCREENER_PRESETS_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  }catch(e){ return []; }
+}
+function savePresets(list){
+  try{ localStorage.setItem(SCREENER_PRESETS_KEY, JSON.stringify(list)); }catch(e){ toast("Impossible d'enregistrer : stockage du navigateur indisponible."); }
+}
+
+function renderPresetChips(){
+  const wrap = document.getElementById("presetChips");
+  if(!wrap) return;
+  const presets = loadPresets();
+  const current = JSON.stringify(getScreenerSettings());
+  if(!presets.length){
+    wrap.innerHTML = `<span class="preset-empty">Aucun réglage enregistré — règle les filtres puis « Enregistrer ».</span>`;
+    return;
+  }
+  wrap.innerHTML = presets.map(p=>{
+    const on = JSON.stringify(p.settings) === current;
+    const strat = STRATEGIES[p.settings.strategy];
+    return `<span class="preset-chip${on ? " on" : ""}" data-preset-id="${p.id}" title="${strat ? strat.name : ""}">
+      <button type="button" class="preset-apply" data-preset-apply="${p.id}">${escapeHtml(p.name)}</button>
+      <button type="button" class="preset-del" data-preset-del="${p.id}" title="Supprimer ce réglage" aria-label="Supprimer ${escapeHtml(p.name)}">✕</button>
+    </span>`;
+  }).join("");
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function savePresetPrompt(){
+  const presets = loadPresets();
+  const active = presets.find(p=>JSON.stringify(p.settings) === JSON.stringify(getScreenerSettings()));
+  const name = (prompt("Nom de ce réglage (ex. « Trending Monde QI ») :", active ? active.name : "") || "").trim();
+  if(!name) return;
+  const existing = presets.find(p=>p.name.toLowerCase() === name.toLowerCase());
+  if(existing){
+    if(!confirm(`Un réglage « ${existing.name} » existe déjà. Le remplacer par les réglages actuels ?`)) return;
+    existing.settings = getScreenerSettings();
+    existing.updatedAt = Date.now();
+  } else {
+    presets.push({ id: "ps_" + Date.now() + "_" + Math.random().toString(36).slice(2,7), name, settings: getScreenerSettings(), updatedAt: Date.now() });
+  }
+  savePresets(presets);
+  renderPresetChips();
+  toast(`Réglage « ${name} » enregistré.`);
+}
+
+function initScreenerSettings(){
+  // 1) restaurer les derniers réglages utilisés
+  const saved = loadScreenerState();
+  if(saved) applyScreenerSettings(saved);
+
+  // 2) sauvegarde automatique après chaque interaction avec les filtres.
+  // Écoute en phase de bouillonnement : les gestionnaires des contrôles
+  // ont déjà mis l'état à jour quand on enregistre.
+  ["strategyGrid", "screenerControls"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener("click", ()=>setTimeout(saveScreenerState, 0));
+    el.addEventListener("change", ()=>setTimeout(saveScreenerState, 0));
+  });
+
+  // 3) réglages nommés
+  document.getElementById("presetSaveBtn").addEventListener("click", savePresetPrompt);
+  document.getElementById("presetChips").addEventListener("click", e=>{
+    const apply = e.target.closest("[data-preset-apply]");
+    const del = e.target.closest("[data-preset-del]");
+    const presets = loadPresets();
+    if(apply){
+      const p = presets.find(x=>x.id === apply.dataset.presetApply);
+      if(!p) return;
+      applyScreenerSettings(p.settings);
+      saveScreenerState();
+      toast(`Réglage « ${p.name} » chargé.`);
+    } else if(del){
+      const p = presets.find(x=>x.id === del.dataset.presetDel);
+      if(!p || !confirm(`Supprimer le réglage « ${p.name} » ?`)) return;
+      savePresets(presets.filter(x=>x.id !== p.id));
+      renderPresetChips();
+    }
+  });
+  renderPresetChips();
+}
+
 function init(){
   const versionEl = document.getElementById("appVersion");
   if(versionEl) versionEl.textContent = APP_VERSION;
@@ -844,6 +997,8 @@ function init(){
   document.getElementById("colsBtn").addEventListener("click", ()=>{
     openColumnsModal("screener", COLS, renderResults);
   });
+
+  initScreenerSettings();
 }
 
 // ---------------------------------------------------------------

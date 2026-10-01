@@ -7,13 +7,13 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-title" content="Grand Livre">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.40.0"></script>
-<script src="pwa.js?v=7.40.0" defer></script>
+<script src="theme.js?v=7.41.0"></script>
+<script src="pwa.js?v=7.41.0" defer></script>
 <title>Le Grand Livre — Historique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=7.40.0">
+<link rel="stylesheet" href="styles.css?v=7.41.0">
 </head>
 <body>
 
@@ -58,6 +58,16 @@
         <option value="">Toutes</option>
       </select>
     </div>
+    <div class="field">
+      <label>Comparer à l'indice (même période)</label>
+      <select id="filterBenchmark">
+        <option value="">Aucun</option>
+        <option value="FR">CAC 40</option>
+        <option value="EU">Indice européen</option>
+        <option value="US">S&amp;P 500</option>
+        <option value="WORLD">Indice monde</option>
+      </select>
+    </div>
   </div>
 
   <div class="section-title"><span class="idx">01</span> Récapitulatif <span class="recap-scope" id="recapScope"></span></div>
@@ -76,8 +86,8 @@
 
 </div>
 
-<script src="data.js?v=7.40.0"></script>
-<script src="portfolio-store.js?v=7.40.0"></script>
-<script src="historique.js?v=7.40.0"></script>
+<script src="data.js?v=7.41.0"></script>
+<script src="portfolio-store.js?v=7.41.0"></script>
+<script src="historique.js?v=7.41.0"></script>
 </body>
 </html>

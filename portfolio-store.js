@@ -285,6 +285,15 @@ function pfAddClosure(closure, portfolioId){
   return pfGetClosures(id);
 }
 
+/** Met à jour des champs d'une clôture (ex. startDate saisie à la main). */
+function pfUpdateClosure(id, updates){
+  const store = pfLoadStore();
+  const c = (store.closures || []).find(x=>x.id===id);
+  if(!c) return false;
+  Object.assign(c, updates);
+  return pfSaveStore(store);
+}
+
 function pfRemoveClosure(id){
   const store = pfLoadStore();
   store.closures = (store.closures || []).filter(c=>c.id!==id);

@@ -802,6 +802,8 @@ async function openCloseoutModal(){
         gain: r.gain,
         gainPct: r.gainPct,
         dividendsReceived: r.divReceived,
+        // position telle qu'elle était, pour pouvoir la restaurer depuis l'Historique
+        holding: (({id, ...h}) => h)(holdings.find(h=>h.id===r.id) || {}),
       })),
     }, portfolioId);
     pfClearHoldings(portfolioId);
@@ -2038,7 +2040,7 @@ function renderSwitcher(){
           toast("Impossible de supprimer le dernier portefeuille restant.");
           return;
         }
-        if(confirm(`Supprimer définitivement "${p.name}" et toutes ses positions ?`)){
+        if(confirm(`Supprimer définitivement "${p.name}" et toutes ses positions ?\n\nSes clôtures restent dans l'Historique (où tu peux aussi le restaurer à partir d'une clôture).`)){
           pfDeletePortfolio(id);
           renderSwitcher();
           renderPortfolio();
@@ -2079,7 +2081,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.39.0";
+  if(versionEl) versionEl.textContent = "v7.40.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();

@@ -943,10 +943,16 @@ td.num, .detail-item .v, .cash-amount, .pf-tab-value, .div-list td{font-variant-
 .preset-empty{font-size:12.5px;color:var(--ink-faint);}
 .preset-chip{display:inline-flex;align-items:center;border:1px solid var(--hairline);border-radius:999px;background:var(--panel);overflow:hidden;}
 .preset-chip button{background:none;border:0;cursor:pointer;font:inherit;color:var(--ink-dim);}
-.preset-apply{padding:6px 4px 6px 12px;font-size:13px;}
-.preset-del{padding:6px 10px 6px 6px;font-size:11px;color:var(--ink-faint)!important;}
+.preset-apply{padding:6px 10px 6px 12px;font-size:13px;}
+.preset-del{padding:6px 11px;font-size:14px;line-height:1;color:var(--ink-dim)!important;border-left:1px solid var(--hairline)!important;align-self:stretch;}
+.preset-chip.on .preset-del{border-left-color:rgba(255,255,255,.35)!important;}
 .preset-del:hover{color:var(--oxide-bright)!important;}
 .preset-chip.on{background:var(--acc);border-color:var(--acc);}
 .preset-chip.on button{color:var(--surAcc)!important;}
 :root[data-theme="dark"] .preset-chip.on{background:var(--ink);border-color:var(--ink);}
 :root[data-theme="dark"] .preset-chip.on button{color:#0d0d10!important;}
+.preset-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.preset-actions .btn-io{padding:7px 11px;font-size:12.5px;}
+@media (max-width:560px){ .preset-actions{width:100%;} .preset-actions .btn-io{flex:1;} }
+/* historique : portefeuille supprimé */
+.deleted-tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:6px;border:1px solid var(--hairline);color:var(--ink-faint);margin-left:4px;vertical-align:1px;}

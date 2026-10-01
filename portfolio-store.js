@@ -36,11 +36,26 @@ function pfMigrateFromV1(){
   }catch(e){}
   const id = pfNewId();
   const store = {
-    portfolios: [{ id, name: "Portefeuille principal", holdings, history, cash: [], closures: [] }],
+    portfolios: [{ id, name: "Portefeuille principal", holdings, history, cash: [] }],
     activeId: id,
+    closures: [],
   };
   pfSaveStore(store);
   return store;
+}
+
+/* Les clôtures vivaient DANS chaque portefeuille : supprimer un
+   portefeuille effaçait aussi son historique. Elles sont désormais rangées
+   dans une liste commune (store.closures), chacune gardant l'id et le NOM
+   du portefeuille d'origine — l'historique survit à la suppression. */
+function pfMigrateClosures(store){
+  if(Array.isArray(store.closures)) return false;
+  store.closures = [];
+  store.portfolios.forEach(p=>{
+    (p.closures || []).forEach(c=> store.closures.push({ ...c, portfolioId: p.id, portfolioName: p.name }));
+    delete p.closures;
+  });
+  return true;
 }
 
 function pfLoadStore(){
@@ -50,6 +65,7 @@ function pfLoadStore(){
       const store = JSON.parse(raw);
       if(store && Array.isArray(store.portfolios) && store.portfolios.length){
         if(!store.portfolios.some(p=>p.id===store.activeId)) store.activeId = store.portfolios[0].id;
+        if(pfMigrateClosures(store)) pfSaveStore(store);
         return store;
       }
     }
@@ -85,7 +101,7 @@ function pfSetActivePortfolio(id){
 function pfCreatePortfolio(name){
   const store = pfLoadStore();
   const id = pfNewId();
-  store.portfolios.push({ id, name: name || "Nouveau portefeuille", holdings: [], history: [], cash: [], closures: [] });
+  store.portfolios.push({ id, name: name || "Nouveau portefeuille", holdings: [], history: [], cash: [] });
   store.activeId = id;
   pfSaveStore(store);
   return id;
@@ -93,9 +109,15 @@ function pfCreatePortfolio(name){
 function pfRenamePortfolio(id, newName){
   const store = pfLoadStore();
   const p = store.portfolios.find(x=>x.id===id);
-  if(p && newName && newName.trim()){ p.name = newName.trim(); pfSaveStore(store); }
+  if(p && newName && newName.trim()){
+    p.name = newName.trim();
+    // l'historique suit le nouveau nom
+    (store.closures || []).forEach(c=>{ if(c.portfolioId === id) c.portfolioName = p.name; });
+    pfSaveStore(store);
+  }
 }
-/** Retourne false si suppression refusée (dernier portefeuille restant — on en garde toujours au moins un). */
+/** Retourne false si suppression refusée (dernier portefeuille restant — on en garde toujours au moins un).
+ * Les clôtures de ce portefeuille restent dans l'historique (store.closures). */
 function pfDeletePortfolio(id){
   const store = pfLoadStore();
   if(store.portfolios.length <= 1) return false;
@@ -236,31 +258,81 @@ function pfClearPlan(portfolioId){
   return pfSaveStore(store);
 }
 
+/** Toutes les clôtures, y compris celles de portefeuilles supprimés. */
+function pfGetAllClosures(){
+  return pfLoadStore().closures || [];
+}
+
 function pfGetClosures(portfolioId){
   const store = pfLoadStore();
-  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
-  return p ? (p.closures || []) : [];
+  const id = portfolioId || store.activeId;
+  return (store.closures || []).filter(c=>c.portfolioId === id);
 }
 
 function pfAddClosure(closure, portfolioId){
-  const closures = pfGetClosures(portfolioId);
-  closures.push({
+  const store = pfLoadStore();
+  const id = portfolioId || store.activeId;
+  const p = store.portfolios.find(x=>x.id===id);
+  store.closures = store.closures || [];
+  store.closures.push({
     id: "cl_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
     createdAt: Date.now(),
     ...closure,
+    portfolioId: id,
+    portfolioName: p ? p.name : (closure.portfolioName || "Portefeuille"),
   });
-  const store = pfLoadStore();
-  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
-  if(p){ p.closures = closures; pfSaveStore(store); }
-  return closures;
+  pfSaveStore(store);
+  return pfGetClosures(id);
 }
 
-function pfRemoveClosure(id, portfolioId){
-  const closures = pfGetClosures(portfolioId).filter(c=>c.id!==id);
+function pfRemoveClosure(id){
   const store = pfLoadStore();
-  const p = store.portfolios.find(x=>x.id===(portfolioId||store.activeId));
-  if(p){ p.closures = closures; pfSaveStore(store); }
-  return closures;
+  store.closures = (store.closures || []).filter(c=>c.id!==id);
+  pfSaveStore(store);
+  return store.closures;
+}
+
+/**
+ * Restaure une clôture : remet ses positions dans le portefeuille d'origine
+ * (recréé sous le même nom s'il a été supprimé) et retire la clôture de
+ * l'historique — l'inverse exact de « Clôturer position ».
+ * Les clôtures anciennes ne mémorisaient pas la date d'achat : on prend
+ * alors la date de clôture (signalé dans `missingDates`).
+ */
+function pfRestoreClosure(closureId){
+  const store = pfLoadStore();
+  const c = (store.closures || []).find(x=>x.id===closureId);
+  if(!c) return {ok:false, message:"Clôture introuvable."};
+  const positions = c.positions || [];
+  if(!positions.length) return {ok:false, message:"Cette clôture ne contient pas le détail des positions : restauration impossible."};
+
+  let target = store.portfolios.find(p=>p.id===c.portfolioId)
+            || store.portfolios.find(p=>p.name===c.portfolioName);
+  let created = false;
+  if(!target){
+    target = { id: pfNewId(), name: c.portfolioName || "Portefeuille restauré", holdings: [], history: [], cash: [] };
+    store.portfolios.push(target);
+    created = true;
+  }
+  let missingDates = 0;
+  positions.forEach(pos=>{
+    const base = pos.holding ? { ...pos.holding } : {
+      symbol: pos.symbol, name: pos.name, isin: pos.isin, country: pos.country,
+      quantity: pos.quantity, purchasePrice: pos.purchasePrice,
+      purchaseDate: pos.purchaseDate, priceCurrency: pos.priceCurrency || pos.purchaseCcy,
+    };
+    if(!base.purchaseDate){ base.purchaseDate = c.closedDate; missingDates++; }
+    target.holdings.push({ ...base, id: "h_" + Date.now() + "_" + Math.random().toString(36).slice(2,8), addedAt: Date.now() });
+  });
+  store.closures = store.closures.filter(x=>x.id!==closureId);
+  store.activeId = target.id;
+  pfSaveStore(store);
+  return {
+    ok: true,
+    portfolioName: target.name,
+    message: `${positions.length} position(s) remise(s) dans « ${target.name} »${created ? " (portefeuille recréé)" : ""}.` +
+      (missingDates ? ` Date d'achat inconnue pour ${missingDates} position(s) (clôture ancienne) : date de clôture utilisée, à corriger si besoin.` : ""),
+  };
 }
 
 /** Vide toutes les positions d'un portefeuille (utilisé par "Clôturer
@@ -327,9 +399,10 @@ function pfExportData(){
   const store = pfLoadStore();
   return {
     exportedAt: new Date().toISOString(),
-    version: 2,
+    version: 3,
     portfolios: store.portfolios,
     activeId: store.activeId,
+    closures: store.closures || [],
   };
 }
 
@@ -374,6 +447,15 @@ function pfImportData(jsonText, mode){
   }
 
   const store = pfLoadStore();
+  // Clôtures du fichier : liste commune (v3) ou rangées dans chaque
+  // portefeuille (anciens exports) — rattachées ensuite par nom.
+  const incomingClosures = Array.isArray(data.closures) ? data.closures.map(c=>({ ...c }))
+    : incomingPortfolios.flatMap(p=>(p.closures||[]).map(c=>({ ...c, portfolioName: c.portfolioName || p.name })));
+  const relink = (closures)=> closures.forEach(c=>{
+    const p = store.portfolios.find(x=>x.name === c.portfolioName);
+    if(p) c.portfolioId = p.id;
+  });
+  store.closures = store.closures || [];
 
   if(mode === "merge"){
     incomingPortfolios.forEach(incoming=>{
@@ -392,16 +474,19 @@ function pfImportData(jsonText, mode){
         const existingCashIds = new Set(existing.cash.map(c=>c.id));
         (incoming.cash||[]).forEach(c=>{ if(!existingCashIds.has(c.id)) existing.cash.push(c); });
 
-        if(!existing.closures) existing.closures = [];
-        const existingClosureIds = new Set(existing.closures.map(c=>c.id));
-        (incoming.closures||[]).forEach(c=>{ if(!existingClosureIds.has(c.id)) existing.closures.push(c); });
       } else {
-        store.portfolios.push({ id: pfNewId(), name: incoming.name || "Portefeuille importé", holdings: incoming.holdings||[], history: incoming.history||[], cash: incoming.cash||[], closures: incoming.closures||[] });
+        store.portfolios.push({ id: pfNewId(), name: incoming.name || "Portefeuille importé", holdings: incoming.holdings||[], history: incoming.history||[], cash: incoming.cash||[] });
       }
     });
+    const existingClosureIds = new Set(store.closures.map(c=>c.id));
+    const added = incomingClosures.filter(c=>!existingClosureIds.has(c.id));
+    relink(added);
+    store.closures.push(...added);
   } else {
-    store.portfolios = incomingPortfolios.map(p=>({ id: pfNewId(), name: p.name || "Portefeuille importé", holdings: p.holdings||[], history: p.history||[], cash: p.cash||[], closures: p.closures||[] }));
+    store.portfolios = incomingPortfolios.map(p=>({ id: pfNewId(), name: p.name || "Portefeuille importé", holdings: p.holdings||[], history: p.history||[], cash: p.cash||[] }));
     store.activeId = store.portfolios[0].id;
+    store.closures = incomingClosures;
+    relink(store.closures);
   }
 
   pfSaveStore(store);

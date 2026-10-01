@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.39.0";
+const APP_VERSION = "v7.40.0";
 
 let state = {
   strategy: "trending_value",
@@ -913,7 +913,53 @@ function savePresetPrompt(){
   toast(`Réglage « ${name} » enregistré.`);
 }
 
+/** Supprime un réglage : celui qui est actif, ou, sinon, celui qu'on
+ * choisit dans la liste (fenêtre). */
+function deletePresetFlow(){
+  const presets = loadPresets();
+  if(!presets.length){ toast("Aucun réglage enregistré à supprimer."); return; }
+  const current = JSON.stringify(getScreenerSettings());
+  const active = presets.find(p=>JSON.stringify(p.settings) === current);
+  if(active){
+    if(confirm(`Supprimer le réglage « ${active.name} » ?`)){
+      savePresets(presets.filter(p=>p.id !== active.id));
+      renderPresetChips();
+      toast(`Réglage « ${active.name} » supprimé.`);
+    }
+    return;
+  }
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h3>Supprimer des réglages</h3>
+      <div class="modal-sub">Coche les réglages à supprimer.</div>
+      <div class="col-list">${presets.map(p=>`
+        <div class="col-row"><label class="col-check"><input type="checkbox" value="${p.id}"> ${escapeHtml(p.name)} <em>${escapeHtml((STRATEGIES[p.settings.strategy]||{}).name || "")}</em></label></div>`).join("")}
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="presetDelCancel">Annuler</button>
+        <button class="btn-confirm" id="presetDelOk">Supprimer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = ()=> overlay.remove();
+  overlay.addEventListener("click", e=>{ if(e.target === overlay) close(); });
+  overlay.querySelector("#presetDelCancel").addEventListener("click", close);
+  overlay.querySelector("#presetDelOk").addEventListener("click", ()=>{
+    const ids = new Set([...overlay.querySelectorAll("input:checked")].map(i=>i.value));
+    if(!ids.size){ close(); return; }
+    savePresets(loadPresets().filter(p=>!ids.has(p.id)));
+    renderPresetChips();
+    close();
+    toast(`${ids.size} réglage(s) supprimé(s).`);
+  });
+}
+
+let DEFAULT_SCREENER_SETTINGS = null; // réglages d'origine de la page, pour « Réinitialiser »
+
 function initScreenerSettings(){
+  DEFAULT_SCREENER_SETTINGS = getScreenerSettings();
   // 1) restaurer les derniers réglages utilisés
   const saved = loadScreenerState();
   if(saved) applyScreenerSettings(saved);
@@ -930,6 +976,13 @@ function initScreenerSettings(){
 
   // 3) réglages nommés
   document.getElementById("presetSaveBtn").addEventListener("click", savePresetPrompt);
+  document.getElementById("presetDeleteBtn").addEventListener("click", deletePresetFlow);
+  document.getElementById("presetResetBtn").addEventListener("click", ()=>{
+    if(!confirm("Remettre tous les filtres du screener par défaut ? (les réglages enregistrés sont conservés)")) return;
+    applyScreenerSettings(DEFAULT_SCREENER_SETTINGS);
+    saveScreenerState();
+    toast("Filtres remis par défaut.");
+  });
   document.getElementById("presetChips").addEventListener("click", e=>{
     const apply = e.target.closest("[data-preset-apply]");
     const del = e.target.closest("[data-preset-del]");

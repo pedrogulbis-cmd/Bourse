@@ -7,13 +7,13 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-title" content="Grand Livre">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.39.0"></script>
-<script src="pwa.js?v=7.39.0" defer></script>
+<script src="theme.js?v=7.40.0"></script>
+<script src="pwa.js?v=7.40.0" defer></script>
 <title>Le Grand Livre — Screener Wall Street</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=7.39.0">
+<link rel="stylesheet" href="styles.css?v=7.40.0">
 </head>
 <body>
 
@@ -54,7 +54,11 @@
   <div class="preset-bar">
     <span class="preset-label">Mes réglages</span>
     <div class="preset-chips" id="presetChips"></div>
-    <button type="button" class="btn-io" id="presetSaveBtn">+ Enregistrer ces réglages</button>
+    <div class="preset-actions">
+      <button type="button" class="btn-io" id="presetSaveBtn">+ Enregistrer</button>
+      <button type="button" class="btn-io" id="presetDeleteBtn" title="Supprimer un réglage enregistré">🗑 Supprimer</button>
+      <button type="button" class="btn-io" id="presetResetBtn" title="Remettre les filtres par défaut">↺ Réinitialiser</button>
+    </div>
   </div>
   <div class="panel" id="screenerControls">
     <div class="grid-2">
@@ -181,9 +185,9 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="data.js?v=7.39.0"></script>
-<script src="columns.js?v=7.39.0"></script>
-<script src="portfolio-store.js?v=7.39.0"></script>
-<script src="app.js?v=7.39.0"></script>
+<script src="data.js?v=7.40.0"></script>
+<script src="columns.js?v=7.40.0"></script>
+<script src="portfolio-store.js?v=7.40.0"></script>
+<script src="app.js?v=7.40.0"></script>
 </body>
 </html>

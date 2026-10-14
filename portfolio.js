@@ -1926,6 +1926,133 @@ async function importFortuneoPDF(file){
   toast(msg);
 }
 
+// ---------------------------------------------------------------
+// Import Fortuneo (export Excel « portefeuille simple »)
+// Fichier .xls téléchargé depuis l'espace Bourse Fortuneo : en-tête de
+// quelques lignes (n° de compte, type de compte, date), puis un tableau
+// Libellé | Cours | Dev | Var/Veille | Qté | PRU | Valorisation | +/- values
+// | +/- values (%) | Poids | ISIN. Le PRU est le vrai prix de revient ;
+// le fichier ne contient pas de date d'achat (date de l'export utilisée).
+// Indépendant de l'import PDF, qui reste disponible.
+// ---------------------------------------------------------------
+
+const SHEETJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+
+/** Charge SheetJS à la demande (inutile de l'alourdir pour tout le monde). */
+function loadSheetJS(){
+  if(typeof XLSX !== "undefined") return Promise.resolve();
+  return new Promise((resolve, reject)=>{
+    const s = document.createElement("script");
+    s.src = SHEETJS_URL;
+    s.onload = ()=> resolve();
+    s.onerror = ()=> reject(new Error("La librairie de lecture Excel (SheetJS) n'a pas pu se charger depuis le CDN — vérifie ta connexion."));
+    document.head.appendChild(s);
+  });
+}
+
+/** Lit l'export Excel Fortuneo -> { positions, statementDate, accountType }. */
+function parseFortuneoXLS(arrayBuffer){
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+  const norm = v => String(v).normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+
+  // Ligne d'en-tête : celle qui contient « ISIN » et « Qté »
+  const headerIdx = rows.findIndex(r => r.some(c => norm(c) === "isin") && r.some(c => norm(c) === "qte"));
+  if(headerIdx === -1) return { positions: [], statementDate: null, accountType: null };
+  const header = rows[headerIdx].map(norm);
+  const col = name => header.indexOf(name);
+  const C = { name: col("libelle"), price: col("cours"), ccy: col("dev"), qty: col("qte"), pru: col("pru"), isin: col("isin") };
+
+  // En-tête du fichier : date JJ/MM/AAAA et type de compte « (PEA ...) »
+  let statementDate = null, accountType = null;
+  rows.slice(0, headerIdx).forEach(r => r.forEach(c => {
+    const s = String(c).trim();
+    const d = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(d && !statementDate) statementDate = `${d[3]}-${d[2]}-${d[1]}`;
+    const t = s.match(/^\((PEA-PME|PEA|CTO|COMPTE[- ]TITRES?|ASSURANCE[- ]VIE)\b/i);
+    if(t && !accountType) accountType = t[1].toUpperCase();
+  }));
+
+  const num = v => {
+    if(typeof v === "number") return v;
+    const n = parseFloat(String(v).replace(/\s/g, "").replace(",", "."));
+    return isNaN(n) ? null : n;
+  };
+  const positions = [];
+  rows.slice(headerIdx + 1).forEach(r => {
+    const isin = String(r[C.isin] || "").trim().toUpperCase();
+    if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)) return; // ligne vide, total, etc.
+    const rawName = String(r[C.name] || "").trim();
+    const ticker = (rawName.match(/\(([^()]+)\)\s*$/) || [])[1] || null;
+    positions.push({
+      name: rawName.replace(/\s*\([^()]+\)\s*$/, "") || isin,
+      ticker,
+      isin,
+      quantity: num(r[C.qty]),
+      costBasisPerShare: C.pru >= 0 ? num(r[C.pru]) : null,
+      currentPrice: C.price >= 0 ? num(r[C.price]) : null,
+      currency: (C.ccy >= 0 && String(r[C.ccy]).trim()) || "EUR",
+    });
+  });
+  return { positions, statementDate, accountType };
+}
+
+async function importFortuneoXLS(file){
+  let parsed;
+  try{
+    await loadSheetJS();
+    parsed = parseFortuneoXLS(await file.arrayBuffer());
+  }catch(e){
+    toast("Échec de lecture du fichier Excel : " + e.message);
+    return;
+  }
+  const { positions, statementDate, accountType } = parsed;
+  if(positions.length === 0){
+    toast("Aucune position reconnue dans ce fichier — est-ce bien l'export Excel « portefeuille » de Fortuneo ? Dis-le à Claude pour ajuster la lecture.");
+    return;
+  }
+
+  let snap;
+  try{ snap = await loadSnapshot(); }
+  catch(e){ toast("Impossible de charger data-snapshot.json pour faire correspondre les titres : " + e.message); return; }
+
+  const matched = matchDegiroToSnapshot(
+    positions.map(p=>({ name:p.name, isin:p.isin, quantity:p.quantity,
+      price: p.costBasisPerShare != null ? p.costBasisPerShare : p.currentPrice, currency:p.currency })),
+    snap.records
+  );
+  const unmatched = matched.filter(m=>!m.match);
+
+  const name = prompt("Nom du nouveau portefeuille :", accountType ? `Fortuneo ${accountType}` : "Fortuneo");
+  if(!name) return;
+  const portfolioId = pfCreatePortfolio(name.trim());
+
+  const purchaseDate = statementDate || new Date().toISOString().slice(0,10);
+  matched.forEach(m=>{
+    pfAddHolding({
+      symbol: m.match ? m.match.symbol : `MANUAL:${m.isin}`,
+      name: m.match ? m.match.name : m.name,
+      country: m.match ? m.match.country : null,
+      isin: m.isin,
+      quantity: m.quantity, purchasePrice: m.price, purchaseDate,
+      priceCurrency: m.currency,
+    }, portfolioId);
+  });
+
+  pfSetActivePortfolio(portfolioId);
+  renderSwitcher();
+  renderPlan();
+  renderPortfolio();
+
+  let msg = `Portefeuille "${name.trim()}" créé : ${matched.length} position(s) importées avec leur PRU Fortuneo.`;
+  msg += ` Le fichier ne donne pas les dates d'achat : date de l'export (${purchaseDate}) utilisée — corrige-les via ✎ pour des dividendes et une comparaison aux indices exacts.`;
+  if(unmatched.length){
+    msg += ` ${unmatched.length} titre(s) non retrouvé(s) dans le snapshot : ${unmatched.map(m=>m.name).join(', ')}.`;
+  }
+  toast(msg);
+}
+
 /** Renseigne la valeur totale (positions + cash, en euros) dans chaque
  * onglet de portefeuille — permet de les comparer sans avoir à basculer
  * de l'un à l'autre. Silencieuse en cas d'échec : un onglet sans montant
@@ -2081,7 +2208,7 @@ async function initHoldingsSuffixSelector(){
 
 function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.41.0";
+  if(versionEl) versionEl.textContent = "v7.42.0";
   renderSwitcher();
   renderPlan();
   renderPortfolio();
@@ -2156,6 +2283,14 @@ function init(){
   document.getElementById("importFortuneoFile").addEventListener("change", (e)=>{
     const file = e.target.files[0];
     if(file) importFortuneoPDF(file);
+    e.target.value = "";
+  });
+  document.getElementById("importFortuneoXlsBtn").addEventListener("click", ()=>{
+    document.getElementById("importFortuneoXlsFile").click();
+  });
+  document.getElementById("importFortuneoXlsFile").addEventListener("change", (e)=>{
+    const file = e.target.files[0];
+    if(file) importFortuneoXLS(file);
     e.target.value = "";
   });
   document.getElementById("importFile").addEventListener("change", (e)=>{

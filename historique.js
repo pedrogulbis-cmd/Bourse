@@ -16,7 +16,9 @@ function fmtEUR(v){
 }
 function fmtPctSigned(v){
   if(v===null||v===undefined||Number.isNaN(v)) return "—";
-  return (v>=0?"+":"") + v.toFixed(1) + "%";
+  // 2 décimales sous 1 % : sinon −0,03 % s'affichait « −0.0 % », lu comme zéro
+  const d = Math.abs(v) < 1 ? 2 : 1;
+  return (v>=0?"+":"") + v.toFixed(d) + "%";
 }
 function escapeHtml(s){
   return String(s ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -103,7 +105,7 @@ function benchMissingReason(c){
   const dated = (c.positions || []).some(p=>positionStartDate(c, p)) || c.startDate;
   return dated ? "Période antérieure à l'historique de l'indice." : "Date d'achat inconnue (clôture ancienne) — ouvre le détail pour saisir une date de début.";
 }
-function fmtPts(v){ return v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + " pts"; }
+function fmtPts(v){ return v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(Math.abs(v) < 1 ? 2 : 1) + " pts"; }
 
 let allClosures = []; // toutes les clôtures, portefeuilles supprimés compris
 
@@ -493,7 +495,7 @@ function renderAll(){
 
 async function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.43.0";
+  if(versionEl) versionEl.textContent = "v7.44.0";
   const benchSel = document.getElementById("filterBenchmark");
   benchSel.value = getBenchmark();
   renderAll();

@@ -70,6 +70,10 @@ function indexReturnPct(key, from, to){
   const a = indexCloseAt(s, from), b = indexCloseAt(s, to);
   return (a && b) ? (b / a - 1) * 100 : null;
 }
+/** Date d'achat propre à la position (sans repli sur la clôture). */
+function ownPurchaseDate(p){
+  return (p.holding && p.holding.purchaseDate) || p.purchaseDate || "";
+}
 function positionStartDate(c, p){
   return (p.holding && p.holding.purchaseDate) || p.purchaseDate || c.startDate || null;
 }
@@ -346,7 +350,17 @@ function restoreClosure(c){
     ? `dans un portefeuille « ${c.portfolioName} » recréé`
     : `dans le portefeuille « ${c.portfolioName} »`;
   if(!confirm(`Restaurer cette clôture ?\n\nLes ${n} position(s) seront remises ${where}, et la clôture du ${c.closedDate} sera retirée de l'historique.`)) return;
-  const res = pfRestoreClosure(c.id);
+  // Positions sans date d'achat (clôtures d'avant la v7.40) : on demande la
+  // date plutôt que de prendre celle de la clôture, qui fausserait le
+  // portefeuille restauré (dividendes, graphique, comparaison aux indices).
+  let fallbackDate = null;
+  const undated = (c.positions || []).filter(p=>!ownPurchaseDate(p)).length;
+  if(undated){
+    const v = (prompt(`${undated} position(s) n'ont pas de date d'achat enregistrée.\nDate d'achat à leur donner (AAAA-MM-JJ) — corrigeable ensuite position par position via ✎ :`, c.startDate || "") || "").trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ alert("Restauration annulée : date invalide ou absente."); return; }
+    fallbackDate = v;
+  }
+  const res = pfRestoreClosure(c.id, fallbackDate);
   alert(res.message);
   renderAll();
 }
@@ -363,13 +377,13 @@ function openClosureDetailModal(closure){
     rowsHtml = `<table class="closure-detail-list"><thead><tr>
       <th>Titre</th><th>Achat</th><th>Qté</th><th>Prix d'achat</th><th>Prix à la clôture</th><th>+/- value</th><th>Avec dividendes</th>${getBenchmark() ? `<th>${HIST_BENCHMARKS[getBenchmark()]} même période</th>` : ''}
     </tr></thead><tbody>` +
-      positions.map(p=>{
+      positions.map((p, i)=>{
         const total = (p.gain||0) + (p.dividendsReceived||0);
         const buyCcy = p.purchaseCcy && p.purchaseCcy!=='EUR' ? ` ${p.purchaseCcy}` : ' €';
         const sellCcy = p.currency && p.currency!=='EUR' ? ` ${p.currency}` : ' €';
         return `<tr>
           <td>${escapeHtml(p.name || p.symbol)}<br><span style="color:var(--ink-faint);font-size:0.8em;">${escapeHtml(p.symbol)}</span></td>
-          <td>${positionStartDate(closure, p) || '—'}</td>
+          <td><input type="date" class="pos-date" data-idx="${i}" value="${ownPurchaseDate(p)}" max="${closure.closedDate}" title="Date d'achat de cette position"></td>
           <td>${p.quantity}</td>
           <td>${p.purchasePrice!=null?p.purchasePrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+buyCcy:'—'}</td>
           <td>${p.currentPrice!=null?p.currentPrice.toLocaleString('fr-FR',{maximumFractionDigits:2})+sellCcy:'—'}</td>
@@ -383,10 +397,22 @@ function openClosureDetailModal(closure){
   }
 
   const canRestore = positions.length > 0;
-  // Clôture ancienne sans date d'achat : on peut saisir le début de période
-  // pour pouvoir la comparer à un indice.
-  const undated = !(positions.some(p=>(p.holding && p.holding.purchaseDate) || p.purchaseDate));
-  const startField = undated ? `
+  const missing = positions.filter(p=>!ownPurchaseDate(p)).length;
+  // Dates d'achat : modifiables position par position (colonne « Achat »),
+  // ou toutes d'un coup. Indispensable pour les clôtures d'avant la v7.40,
+  // qui ne mémorisaient pas ces dates (pas de comparaison aux indices).
+  const datesBar = positions.length ? `
+      <div class="modal-field dates-bar">
+        <label>${missing ? `<strong>${missing} position(s) sans date d'achat</strong> — renseigne-les pour comparer aux indices.` : "Dates d'achat (modifiables dans la colonne « Achat »)."}</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span style="font-size:12.5px;color:var(--ink-faint);">Même date pour toutes :</span>
+          <input type="date" id="allPosDate" max="${closure.closedDate}" style="width:auto;">
+          <button class="btn-io" id="allPosDateApply">Appliquer à toutes</button>
+          <button class="btn-io" id="posDatesSave" style="margin-left:auto;">💾 Enregistrer les dates</button>
+        </div>
+      </div>` : '';
+  // Clôture sans détail par position : une seule date de début possible.
+  const startField = !positions.length ? `
       <div class="modal-field" style="margin-top:14px;">
         <label>Date de début de la période (date d'achat inconnue pour cette clôture ancienne)</label>
         <div style="display:flex;gap:8px;">
@@ -399,6 +425,7 @@ function openClosureDetailModal(closure){
       <h3>Clôture du ${closure.closedDate}</h3>
       <div class="modal-sub">${escapeHtml(closure.portfolioName)}${closure.portfolioDeleted ? ' (supprimé)' : ''} — ${escapeHtml(closure.strategyName || closure.strategy || "Autre")}</div>
       <div style="overflow-x:auto;">${rowsHtml}</div>
+      ${datesBar}
       ${startField}
       <div class="modal-actions">
         <button class="btn-cancel" id="closureDetailClose">Fermer</button>
@@ -414,6 +441,24 @@ function openClosureDetailModal(closure){
   if(sb) sb.addEventListener("click", ()=>{
     const v = overlay.querySelector("#closureStartDate").value;
     pfUpdateClosure(closure.id, { startDate: v || undefined });
+    close();
+    renderAll();
+  });
+  const applyAll = overlay.querySelector("#allPosDateApply");
+  if(applyAll) applyAll.addEventListener("click", ()=>{
+    const v = overlay.querySelector("#allPosDate").value;
+    if(!v) return;
+    overlay.querySelectorAll(".pos-date").forEach(inp=>{ inp.value = v; });
+  });
+  const saveDates = overlay.querySelector("#posDatesSave");
+  if(saveDates) saveDates.addEventListener("click", ()=>{
+    const updated = positions.map((p, i)=>{
+      const v = overlay.querySelector(`.pos-date[data-idx="${i}"]`).value || undefined;
+      const q = { ...p, purchaseDate: v };
+      if(p.holding) q.holding = { ...p.holding, purchaseDate: v };
+      return q;
+    });
+    pfUpdateClosure(closure.id, { positions: updated });
     close();
     renderAll();
   });
@@ -448,7 +493,7 @@ function renderAll(){
 
 async function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.42.0";
+  if(versionEl) versionEl.textContent = "v7.43.0";
   const benchSel = document.getElementById("filterBenchmark");
   benchSel.value = getBenchmark();
   renderAll();

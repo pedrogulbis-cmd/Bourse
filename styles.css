@@ -956,3 +956,5 @@ td.num, .detail-item .v, .cash-amount, .pf-tab-value, .div-list td{font-variant-
 @media (max-width:560px){ .preset-actions{width:100%;} .preset-actions .btn-io{flex:1;} }
 /* historique : portefeuille supprimé */
 .deleted-tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:6px;border:1px solid var(--hairline);color:var(--ink-faint);margin-left:4px;vertical-align:1px;}
+.dates-bar{margin-top:14px;padding-top:12px;border-top:1px solid var(--hairline);}
+.closure-detail-list input.pos-date{width:auto;padding:5px 7px;font-size:12.5px;border-radius:8px;}

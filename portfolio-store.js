@@ -308,7 +308,7 @@ function pfRemoveClosure(id){
  * Les clôtures anciennes ne mémorisaient pas la date d'achat : on prend
  * alors la date de clôture (signalé dans `missingDates`).
  */
-function pfRestoreClosure(closureId){
+function pfRestoreClosure(closureId, fallbackDate){
   const store = pfLoadStore();
   const c = (store.closures || []).find(x=>x.id===closureId);
   if(!c) return {ok:false, message:"Clôture introuvable."};
@@ -330,7 +330,7 @@ function pfRestoreClosure(closureId){
       quantity: pos.quantity, purchasePrice: pos.purchasePrice,
       purchaseDate: pos.purchaseDate, priceCurrency: pos.priceCurrency || pos.purchaseCcy,
     };
-    if(!base.purchaseDate){ base.purchaseDate = c.closedDate; missingDates++; }
+    if(!base.purchaseDate){ base.purchaseDate = fallbackDate || c.startDate || c.closedDate; missingDates++; }
     target.holdings.push({ ...base, id: "h_" + Date.now() + "_" + Math.random().toString(36).slice(2,8), addedAt: Date.now() });
   });
   store.closures = store.closures.filter(x=>x.id!==closureId);
@@ -340,7 +340,7 @@ function pfRestoreClosure(closureId){
     ok: true,
     portfolioName: target.name,
     message: `${positions.length} position(s) remise(s) dans « ${target.name} »${created ? " (portefeuille recréé)" : ""}.` +
-      (missingDates ? ` Date d'achat inconnue pour ${missingDates} position(s) (clôture ancienne) : date de clôture utilisée, à corriger si besoin.` : ""),
+      (missingDates ? ` ${missingDates} position(s) sans date d'achat enregistrée : date ${fallbackDate || c.startDate || c.closedDate} utilisée, à corriger via ✎ si besoin.` : ""),
   };
 }
 

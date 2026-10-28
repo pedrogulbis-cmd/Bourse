@@ -144,11 +144,15 @@ async function runScreening(){
       // domicile suffit à savoir que c'est une cotation croisée).
       records = applyFilter(records, "Cotation croisée 🌐", r => !isCrossListed(r), excluded);
     }
-    // Momentum recalculé sur l'historique quotidien (copie défensive :
-    // scorePool mute les objets).
-    records = records.map(r => withMomentum({...r}, momHist, state.momMode));
+    // Momentum recalculé sur l'historique quotidien — Trending Value
+    // seulement : la présélection de fetch_momentum.py ne couvre que ses
+    // candidats (bon marché et en hausse). Appliqué à Higgons ou Market
+    // Leaders, il mélangerait deux sources de momentum dans un même
+    // classement. Copie défensive : scorePool mute les objets.
+    const tvOnly = isTrendingValueOnly(state.strategy);
+    records = records.map(r => withMomentum({...r}, tvOnly ? momHist : null, state.momMode));
     let takeoverRemoved = 0;
-    if(state.excludeTakeover){
+    if(tvOnly && state.excludeTakeover){
       const before = records.length;
       records = applyFilter(records, "Suspicion d'offre de rachat", r => !r.takeover, excluded);
       takeoverRemoved = before - records.length;
@@ -193,10 +197,10 @@ async function runScreening(){
       qiStats,
       dedupeRemoved,
       takeoverRemoved,
-      excludeTakeover: state.excludeTakeover,
+      excludeTakeover: tvOnly && state.excludeTakeover,
       valuePct: state.valuePct,
       momMode: state.momMode,
-      momHistGeneratedAt: momHist ? momHist.generatedAt : null,
+      momHistGeneratedAt: tvOnly && momHist ? momHist.generatedAt : null,
       momHistCount: records.filter(r=>r.momSource !== "tv").length,
       snapshotGeneratedAt: snap.generatedAt,
       diversificationPct: state.diversificationPct,
@@ -588,7 +592,20 @@ function fmtMcap(v){
  * l'utilisateur cocher trois pays au hasard contredirait leur principe.
  * Les filtres concernés sont alors verrouillés visuellement.
  */
+/** Réglages propres à Trending Value (seuil value, momentum quotidien,
+ * suspicions d'OPA, rapprochement Quant Investing). */
+function isTrendingValueOnly(strategyId){ return strategyId === "trending_value"; }
+
+/** Affiche uniquement les réglages et sections utilisés par la méthode
+ * choisie (attribut data-only-strategy). */
+function applyStrategyFields(strategyId){
+  document.querySelectorAll("[data-only-strategy]").forEach(el=>{
+    el.style.display = el.dataset.onlyStrategy.split(",").includes(strategyId) ? "" : "none";
+  });
+}
+
 function applyStrategyPreset(strat){
+  applyStrategyFields(strat.id);
   const zoneWrap = document.getElementById("zoneRow");
   const countryWrap = document.getElementById("countryList");
   const mcapSel = document.getElementById("mcapFloor");
@@ -821,12 +838,12 @@ const COLS = [
   {key:"country", label:"Pays", num:true},
   // Libellés courts (le tableau est déjà large) ; le détail est dans `title`.
   {key:"ratiosAvailable", label:"Ratios", num:true, title:"Nombre de ratios du composite disponibles, sur 6"},
-  {key:"momStart", label:"Fenêtre 6M", num:true, title:"Dates de début et de fin du momentum 6 mois"},
-  {key:"maxJump", label:"Saut max", num:true, title:"Plus forte hausse en une séance dans la fenêtre — ⚠ au-delà de +20 %"},
-  {key:"takeover", label:"OPA ?", num:true, title:"Suspicion d'offre de rachat : cours collé après une forte hausse"},
+  {key:"momStart", label:"Fenêtre 6M", num:true, title:"Dates de début et de fin du momentum 6 mois", strategies:["trending_value"]},
+  {key:"maxJump", label:"Saut max", num:true, title:"Plus forte hausse en une séance dans la fenêtre — ⚠ au-delà de +20 %", strategies:["trending_value"]},
+  {key:"takeover", label:"OPA ?", num:true, title:"Suspicion d'offre de rachat : cours collé après une forte hausse", strategies:["trending_value"]},
   {key:"reportDate", label:"Comptes", num:true, title:"Date des derniers comptes publiés — ⚠ au-delà de 12 mois"},
   {key:"priceTime", label:"Cours du", num:true, title:"Date du dernier cours — ⚠ au-delà de 7 jours"},
-  {key:"consensus", label:"Qwant", num:true, title:"Consensus : présent dans le top N de Grand Livre ET de Quant Investing"},
+  {key:"consensus", label:"Qwant", num:true, title:"Consensus : présent dans le top N de Grand Livre ET de Quant Investing", strategies:["trending_value"]},
 ];
 
 /* ---------------------------------------------------------------
@@ -926,7 +943,7 @@ function renderResults(){
   if(state.lastRunMeta.strategy === "trending_value"){
     meta.innerHTML += ` · Seuil value : ${state.lastRunMeta.valuePct} % les moins chers de l'univers filtré`;
   }
-  meta.innerHTML += state.lastRunMeta.momHistGeneratedAt
+  if(isTrendingValueOnly(state.lastRunMeta.strategy)) meta.innerHTML += state.lastRunMeta.momHistGeneratedAt
     ? ` · Momentum ${state.lastRunMeta.momMode === "tr" ? "rendement total" : "cours ajustés"} sur historique quotidien pour ${state.lastRunMeta.momHistCount} titre(s) (calcul du ${new Date(state.lastRunMeta.momHistGeneratedAt).toLocaleDateString('fr-FR')}), Perf.6M TradingView pour les autres`
     : ` · <span class="diversification-note">Historique de momentum indisponible (momentum-history.json) : Perf.6M TradingView pour tous les titres.</span>`;
   if(state.lastRunMeta.excludeTakeover){
@@ -971,7 +988,7 @@ function renderResults(){
   }
 
   // Colonnes réordonnées / filtrées selon la préférence de l'utilisateur
-  const cols = applyColumnPrefs("screener", COLS);
+  const cols = applyColumnPrefs("screener", COLS).filter(c => !c.strategies || c.strategies.includes(state.lastRunMeta.strategy));
 
   let html = `<table class="results"><thead><tr>`;
   cols.forEach(c=>{
@@ -1451,8 +1468,58 @@ function init(){
   document.getElementById("colsBtn").addEventListener("click", ()=>{
     openColumnsModal("screener", COLS, renderResults);
   });
+  enableDragScroll(document.getElementById("resultsContainer"));
+  enableDragScroll(document.getElementById("qwantReport"), ".qwant-block");
 
   initScreenerSettings();
+}
+
+/**
+ * Glisser à la souris pour faire défiler un tableau large de gauche à
+ * droite, sans descendre chercher la barre de défilement en bas d'une
+ * liste de 500 lignes. Le défilement ne démarre qu'après quelques pixels
+ * de mouvement : un simple clic ouvre toujours le détail d'une ligne, et
+ * le clic qui termine un glisser est neutralisé. Au doigt, le défilement
+ * natif suffit déjà.
+ * `scrollerSelector` : élément défilant à l'intérieur de `root` (le
+ * rapport Quant Investing contient plusieurs tableaux), sinon `root`.
+ */
+function enableDragScroll(root, scrollerSelector){
+  if(!root) return;
+  const THRESHOLD = 5;
+  let drag = null, suppressClick = false;
+  root.addEventListener("mousedown", e=>{
+    if(e.button !== 0 || e.target.closest("button, a, input, select, label, textarea")) return;
+    const el = scrollerSelector ? e.target.closest(scrollerSelector) : root;
+    if(!el || el.scrollWidth <= el.clientWidth) return;
+    drag = { el, x: e.clientX, left: el.scrollLeft, moved: false };
+  });
+  window.addEventListener("mousemove", e=>{
+    if(!drag) return;
+    const dx = e.clientX - drag.x;
+    if(!drag.moved && Math.abs(dx) < THRESHOLD) return;
+    drag.moved = true;
+    drag.el.classList.add("dragging");
+    drag.el.scrollLeft = drag.left - dx;
+    e.preventDefault(); // pas de sélection de texte pendant le glisser
+  });
+  window.addEventListener("mouseup", ()=>{
+    if(!drag) return;
+    if(drag.moved){
+      suppressClick = true;
+      // relâché hors du tableau : aucun clic ne suit, on ne doit pas
+      // avaler le prochain clic légitime
+      setTimeout(()=>{ suppressClick = false; }, 0);
+      drag.el.classList.remove("dragging");
+    }
+    drag = null;
+  });
+  root.addEventListener("click", e=>{
+    if(!suppressClick) return;
+    suppressClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
 }
 
 // ---------------------------------------------------------------

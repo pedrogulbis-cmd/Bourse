@@ -1011,3 +1011,10 @@ td.num, .detail-item .v, .cash-amount, .pf-tab-value, .div-list td{font-variant-
 .qwant-chip b{font-family:'IBM Plex Mono',monospace;margin-left:3px;}
 .qwant-chip.heavy{border-color:var(--oxide-bright);color:var(--oxide-bright);background:var(--moinsF);}
 .qwant-block .qwant-mix + .pea-hint{display:block;margin-bottom:10px;}
+
+/* Glisser pour défiler horizontalement (enableDragScroll, app.js). */
+@media (min-width:721px){
+  #resultsContainer, .qwant-block{ cursor:grab; }
+  #resultsContainer.dragging, .qwant-block.dragging{ cursor:grabbing; user-select:none; }
+  #resultsContainer.dragging tr{ cursor:grabbing; }
+}

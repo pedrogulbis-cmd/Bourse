@@ -125,7 +125,9 @@ function matchQwantRow(q, idx){
 /** Recalcule le consensus et le rapport à partir du dernier screening. */
 function qwantRefresh(){
   const report = document.getElementById("qwantReport");
-  if(!qwantRows){
+  if(!qwantRows || !isTrendingValueOnly(state.lastRunMeta && state.lastRunMeta.strategy)){
+    // L'export Quant Investing est un classement Trending Value : le
+    // comparer à une autre méthode n'aurait pas de sens.
     state.qwantConsensus = null;
     return;
   }

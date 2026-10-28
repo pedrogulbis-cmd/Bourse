@@ -109,14 +109,14 @@
             <option value="5000000">≥ 5 M$ / jour (très liquide)</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" data-only-strategy="trending_value">
           <label>Seuil value (Trending Value) — part de l'univers filtré gardée comme « la moins chère »</label>
           <select id="valuePct">
             <option value="10" selected>10 % — décile strict (défaut, méthode du livre)</option>
             <option value="13">13 % — proche de Quant Investing (VC2 ≤ 13)</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" data-only-strategy="trending_value">
           <label>Momentum 6 mois</label>
           <select id="momMode">
             <option value="price" selected>Cours ajustés des splits (comme l'indice de prix Quant Investing)</option>
@@ -157,7 +157,7 @@
           </label>
           <div class="qi-options" id="qiOptions" style="display:none;"></div>
         </div>
-        <div class="field">
+        <div class="field" data-only-strategy="trending_value">
           <label>&nbsp;</label>
           <label class="pea-check">
             <input type="checkbox" id="excludeTakeover">
@@ -195,6 +195,7 @@
   </div>
 
   <!-- RAPPROCHEMENT QUANT INVESTING -->
+  <div data-only-strategy="trending_value">
   <div class="section-title"><span class="idx">04</span> Rapprochement avec Quant Investing</div>
   <div class="panel" id="qwantPanel">
     <div class="qwant-controls">
@@ -205,6 +206,7 @@
       <span class="progress-txt" id="qwantStatus">Colonnes attendues : Name, Country, ISIN, Ticker, Value Comp Two, Price Index 6m, Volatility 6m, Sector, Sub-Sector.</span>
     </div>
     <div id="qwantReport"></div>
+  </div>
   </div>
 
   <!-- METHODOLOGY -->

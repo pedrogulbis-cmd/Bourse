@@ -983,3 +983,25 @@ td.num, .detail-item .v, .cash-amount, .pf-tab-value, .div-list td{font-variant-
 .qwant-summary .card .sub-lines{font-size:0.74rem;color:var(--ink-faint);margin-top:6px;}
 .qwant-block{margin-top:18px;overflow-x:auto;}
 .qwant-block h3{font-size:0.95rem;margin:0 0 8px;}
+
+/* ===================================================================
+   ORDINATEUR — tableau du screener
+   Avec les colonnes de contrôle (fenêtre de momentum, alertes, dates),
+   le tableau dépasse la largeur de la page (1180 px) et la règle
+   anti-débordement de body coupait les dernières colonnes, sans moyen d'y
+   accéder. Le tableau défile donc dans son propre conteneur, et occupe
+   toute la largeur de la fenêtre sur grand écran.
+   =================================================================== */
+@media (min-width:721px){
+  #resultsContainer, .qwant-block{ overflow-x:auto; max-width:100%; }
+}
+@media (min-width:1260px){
+  #resultsContainer{
+    width:calc(100vw - 48px);
+    max-width:none;
+    margin-left:calc(50% - 50vw + 24px);
+  }
+}
+/* Valeur sur la première ligne, précision (date) en dessous, plus discrète. */
+.cell-2l{display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.25;}
+.cell-2l small{font-size:0.72rem;color:var(--ink-faint);font-weight:400;}

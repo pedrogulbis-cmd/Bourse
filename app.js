@@ -819,13 +819,14 @@ const COLS = [
   {key:"mcap", label:"Cap.", num:true},
   {key:"analystLabel", label:"Analystes", num:true},
   {key:"country", label:"Pays", num:true},
-  {key:"ratiosAvailable", label:"Ratios /6", num:true},
-  {key:"momStart", label:"Fenêtre 6M", num:true},
-  {key:"maxJump", label:"Alerte saut", num:true},
-  {key:"takeover", label:"Susp. OPA", num:true},
-  {key:"reportDate", label:"Derniers comptes", num:true},
-  {key:"priceTime", label:"Dernier cours", num:true},
-  {key:"consensus", label:"Consensus Qwant", num:true},
+  // Libellés courts (le tableau est déjà large) ; le détail est dans `title`.
+  {key:"ratiosAvailable", label:"Ratios", num:true, title:"Nombre de ratios du composite disponibles, sur 6"},
+  {key:"momStart", label:"Fenêtre 6M", num:true, title:"Dates de début et de fin du momentum 6 mois"},
+  {key:"maxJump", label:"Saut max", num:true, title:"Plus forte hausse en une séance dans la fenêtre — ⚠ au-delà de +20 %"},
+  {key:"takeover", label:"OPA ?", num:true, title:"Suspicion d'offre de rachat : cours collé après une forte hausse"},
+  {key:"reportDate", label:"Comptes", num:true, title:"Date des derniers comptes publiés — ⚠ au-delà de 12 mois"},
+  {key:"priceTime", label:"Cours du", num:true, title:"Date du dernier cours — ⚠ au-delà de 7 jours"},
+  {key:"consensus", label:"Qwant", num:true, title:"Consensus : présent dans le top N de Grand Livre ET de Quant Investing"},
 ];
 
 /* ---------------------------------------------------------------
@@ -854,6 +855,11 @@ function momWindowLabel(s){
   if(s.momSource === "tv" || !s.momStart) return "TradingView";
   return `${fmtDay(s.momStart)} → ${fmtDay(s.momEnd)}`;
 }
+/** Même information, sur deux lignes, pour le tableau. */
+function momWindowCell(s){
+  if(s.momSource === "tv" || !s.momStart) return "TradingView";
+  return `<span class="cell-2l">${fmtDay(s.momStart)}<small>→ ${fmtDay(s.momEnd)}</small></span>`;
+}
 function momWindowTitle(s){
   if(s.momSource === "tv" || !s.momStart) return "Perf.6M de TradingView : titre hors de la présélection de l'historique quotidien, fenêtre non communiquée (cours ajusté des splits, sans dividendes).";
   const parts = [`Cours ajusté des splits : ${fmtMom(s.mom6Price)}`];
@@ -863,7 +869,7 @@ function momWindowTitle(s){
 }
 function jumpCell(s){
   if(s.maxJump == null) return "—";
-  const txt = `${fmtMom(s.maxJump)} le ${fmtDay(s.maxJumpDate)}`;
+  const txt = `<span class="cell-2l">${fmtMom(s.maxJump)}<small>le ${fmtDay(s.maxJumpDate)}</small></span>`;
   return s.jumpAlert
     ? `<span class="flag-alert" title="Plus forte hausse en une séance dans la fenêtre : le momentum dépend fortement de la date de départ">⚠ ${txt}</span>`
     : `<span class="flag-ok" title="Plus forte hausse en une séance dans la fenêtre">${txt}</span>`;
@@ -969,7 +975,7 @@ function renderResults(){
 
   let html = `<table class="results"><thead><tr>`;
   cols.forEach(c=>{
-    html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted '+state.sortDir:''}" title="Cliquer pour trier">${c.label}</th>`;
+    html += `<th data-key="${c.key}" class="${c.num?'num ':''}${state.sortCol===c.key?'sorted '+state.sortDir:''}" title="${c.title ? c.title + ' — ' : ''}Cliquer pour trier">${c.label}</th>`;
   });
   html += `<th class="addcol"></th>`;
   html += `</tr></thead><tbody>`;
@@ -1000,7 +1006,7 @@ function renderResults(){
       analystLabel:     `<td class="num" data-label="Analystes">${analystBadgeHTML(s.analystLabel)}</td>`,
       country:          `<td class="num" data-label="Pays">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>`,
       ratiosAvailable:  `<td class="num" data-label="Ratios disponibles" title="Ratios du composite renseignés ; un ratio manquant reçoit le rang neutre 50">${s.ratiosAvailable} / 6</td>`,
-      momStart:         `<td class="num" data-label="Fenêtre 6M" title="${momWindowTitle(s)}">${momWindowLabel(s)}</td>`,
+      momStart:         `<td class="num" data-label="Fenêtre 6M" title="${momWindowTitle(s)}">${momWindowCell(s)}</td>`,
       maxJump:          `<td class="num" data-label="Alerte saut">${jumpCell(s)}</td>`,
       takeover:         `<td class="num" data-label="Susp. OPA">${takeoverCell(s)}</td>`,
       reportDate:       `<td class="num" data-label="Derniers comptes">${dateCell(s.reportDate, staleAccounts(s), "Date des derniers comptes")}</td>`,

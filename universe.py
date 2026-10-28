@@ -100,7 +100,11 @@ FIELDS = [
     "close",                                   # prix
     "market_cap_basic",                        # capitalisation
     "sector",
+    "industry",                                 # industrie (ex. "Regional Banks", "Finance/Rental/Leasing") — plus fine que le secteur "Finance", qui mélange banques, leasing et immobilier
     "country",
+    "is_primary",                               # cotation principale de la société (False pour une H-share dont l'A-share est la principale, une ADR...)
+    "time",                                     # date de la dernière séance cotée (timestamp Unix) — repère les cours périmés
+    "net_income_fy_h",                          # bénéfice net des exercices passés — sert seulement à compter les exercices publiés
     "price_earnings_ttm",                      # P/E
     "price_book_fq",                           # P/B
     "price_sales_current",                     # P/S — NOM DE CHAMP NON CONFIRMÉ, à vérifier au premier run
@@ -221,12 +225,22 @@ def _row_to_record(row, country_code):
         elif analyst_rating <= 4.5: analyst_label = "Sell"
         else: analyst_label = "Strong Sell"
 
+    # Nombre d'exercices annuels publiés (valeurs renseignées dans
+    # l'historique) : 0 = société sans un an complet de comptes.
+    fy_history = row.get("net_income_fy_h")
+    fy_count = sum(1 for v in fy_history if _num(v) is not None) if isinstance(fy_history, (list, tuple)) else None
+    is_primary = row.get("is_primary")
+
     return {
         "symbol": row.get("ticker"),
         "name": row.get("description") or row.get("name") or row.get("ticker"),
         "isin": row.get("isin") or None,
         "sector": row.get("sector") or "—",
+        "industry": row.get("industry") or None,
         "country": country_code,
+        "is_primary": None if is_primary is None or is_primary != is_primary else int(bool(is_primary)),
+        "price_time": _num(row.get("time")),
+        "fy_count": fy_count,
         "price": row.get("close"),
         "mcap": mcap,
         "pe": row.get("price_earnings_ttm"),

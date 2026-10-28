@@ -77,6 +77,13 @@ def _build_records(conn):
             "by": r.get("book_yield"),
             "cfy": r.get("cf_yield"),
             "reportDate": r.get("report_date"),
+            # Industrie, cotation principale (1/0), date du dernier cours et
+            # nombre d'exercices publiés — filtres et contrôles qualité du
+            # screener (univers Quant Investing).
+            "industry": r.get("industry"),
+            "isPrimary": r.get("is_primary"),
+            "priceTime": r.get("price_time"),
+            "fyCount": r.get("fy_count"),
         }
         records[-1].update({k: v for k, v in extra.items() if v is not None})
         # Calendrier des dividendes — n'ajoute que les champs renseignés

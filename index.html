@@ -7,13 +7,13 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-title" content="Grand Livre">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="theme.js?v=7.44.0"></script>
-<script src="pwa.js?v=7.44.0" defer></script>
+<script src="theme.js?v=7.45.0"></script>
+<script src="pwa.js?v=7.45.0" defer></script>
 <title>Le Grand Livre — Screener Wall Street</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=7.44.0">
+<link rel="stylesheet" href="styles.css?v=7.45.0">
 </head>
 <body>
 
@@ -110,6 +110,21 @@
           </select>
         </div>
         <div class="field">
+          <label>Seuil value (Trending Value) — part de l'univers filtré gardée comme « la moins chère »</label>
+          <select id="valuePct">
+            <option value="10" selected>10 % — décile strict (défaut, méthode du livre)</option>
+            <option value="13">13 % — proche de Quant Investing (VC2 ≤ 13)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Momentum 6 mois</label>
+          <select id="momMode">
+            <option value="price" selected>Cours ajustés des splits (comme l'indice de prix Quant Investing)</option>
+            <option value="tr">Rendement total (cours ajustés des splits et des dividendes)</option>
+          </select>
+          <div class="hint">Calculé sur l'historique quotidien pour les titres présélectionnés (fenêtre datée dans le tableau) ; Perf.6M de TradingView sinon.</div>
+        </div>
+        <div class="field">
           <label>Diversification par pays — optionnel, ne change pas le classement, seulement la sélection finale</label>
           <select id="diversificationPct">
             <option value="" selected>Aucun plafond (défaut)</option>
@@ -138,7 +153,15 @@
           <label>&nbsp;</label>
           <label class="pea-check">
             <input type="checkbox" id="quantInvesting">
-            Filtre Quant Investing <span class="pea-hint">(même univers que leur screener : sans banques ni assurances, sans Chine continentale, Corée, Brésil, Afrique du Sud, Turquie, Mexique, Singapour, sans cotations croisées, comptes publiés depuis moins d'un an)</span>
+            Filtre Quant Investing <span class="pea-hint">(même univers que leur screener — chaque exclusion se règle ci-dessous, avec le nombre de titres qu'elle retire)</span>
+          </label>
+          <div class="qi-options" id="qiOptions" style="display:none;"></div>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <label class="pea-check">
+            <input type="checkbox" id="excludeTakeover">
+            Exclure les suspicions d'offre de rachat <span class="pea-hint">(cours « collé » après une forte hausse — colonne « Susp. OPA »)</span>
           </label>
         </div>
       </div>
@@ -171,9 +194,22 @@
     </div>
   </div>
 
+  <!-- RAPPROCHEMENT QUANT INVESTING -->
+  <div class="section-title"><span class="idx">04</span> Rapprochement avec Quant Investing</div>
+  <div class="panel" id="qwantPanel">
+    <div class="qwant-controls">
+      <label class="btn-ghost qwant-file">↑ Importer un export Quant Investing (.xlsx, .csv)
+        <input type="file" id="qwantFile" accept=".xlsx,.xls,.csv" hidden>
+      </label>
+      <label class="qwant-n">Top N comparé <input type="number" id="qwantTopN" min="5" max="1000" step="5" value="100"></label>
+      <span class="progress-txt" id="qwantStatus">Colonnes attendues : Name, Country, ISIN, Ticker, Value Comp Two, Price Index 6m, Volatility 6m, Sector, Sub-Sector.</span>
+    </div>
+    <div id="qwantReport"></div>
+  </div>
+
   <!-- METHODOLOGY -->
   <div class="method-section">
-    <div class="section-title collapsible" id="methodToggle"><span class="idx">04</span> Méthodologie détaillée <span class="chevron" id="methodChevron">▸</span></div>
+    <div class="section-title collapsible" id="methodToggle"><span class="idx">05</span> Méthodologie détaillée <span class="chevron" id="methodChevron">▸</span></div>
     <div id="methodList" style="display:none;"></div>
   </div>
 
@@ -185,9 +221,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="data.js?v=7.44.0"></script>
-<script src="columns.js?v=7.44.0"></script>
-<script src="portfolio-store.js?v=7.44.0"></script>
-<script src="app.js?v=7.44.0"></script>
+<script src="data.js?v=7.45.0"></script>
+<script src="columns.js?v=7.45.0"></script>
+<script src="portfolio-store.js?v=7.45.0"></script>
+<script src="app.js?v=7.45.0"></script>
+<script src="qwant.js?v=7.45.0"></script>
 </body>
 </html>

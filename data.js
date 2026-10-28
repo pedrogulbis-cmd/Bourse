@@ -241,13 +241,12 @@ const STRATEGIES = {
     rules: [
       "1. Univers : capitalisation ≥ seuil choisi",
       "2. Rang percentile sur 6 facteurs : P/B, P/E, P/S, EBITDA/EV, P/CF, rendement actionnarial",
-      "3. Ne garder que le décile 1 (10 % les moins chers) du composite",
-      "4. Trier par appréciation sur 6 mois, décroissant",
+      "3. Ne garder que les 10 % les moins chers du composite (décile strict, compté APRÈS toutes les exclusions ; seuil réglable, 13 % pour se rapprocher de Quant Investing)",
+      "4. Trier par appréciation sur 6 mois, décroissant (historique quotidien ajusté quand il est disponible, fenêtre datée)",
       "5. Retenir les N meilleurs",
     ],
-    select(pool, n){
-      const decile1 = topDeciles(pool, 1);
-      return decile1.sort((a,b)=>(b.mom6-a.mom6)).slice(0,n);
+    select(pool, n, opts){
+      return topValueShare(pool, (opts && opts.valuePct) || 10).sort((a,b)=>(b.mom6-a.mom6)).slice(0,n);
     },
     warn(s){
       const w = [];
@@ -595,6 +594,14 @@ function median(arr){
   return a.length%2 ? a[mid] : (a[mid-1]+a[mid])/2;
 }
 
+/** Les `pct` % de titres les mieux notés du composite de valeur, comptés
+ * exactement (10 % de 2 345 titres = 235), et non par seuil de percentile
+ * arrondi comme topDeciles(). */
+function topValueShare(pool, pct){
+  const k = Math.max(1, Math.ceil(pool.length * pct / 100));
+  return [...pool].sort((a,b)=>b.vc2Score-a.vc2Score).slice(0, k);
+}
+
 function topDeciles(pool, numDeciles){
   // deciles calculés sur vc2Rank (1..100, 100 = meilleur score du composite de valeur)
   // numDeciles=1 -> garde le décile 1 (10% les moins chers) ; numDeciles=3 -> garde les 3 premiers déciles (30%)
@@ -674,6 +681,21 @@ async function fetchWithTimeout(url, options, timeoutMs = 15000){
   }finally{
     clearTimeout(timer);
   }
+}
+
+/** Momentum 6 mois recalculé sur historique quotidien (fetch_momentum.py,
+ * publié chaque jour à côté du site). null si absent : le screener garde
+ * alors le Perf.6M de TradingView pour tous les titres. */
+let momentumHistoryCache;
+async function loadMomentumHistory(){
+  if(momentumHistoryCache !== undefined) return momentumHistoryCache;
+  try{
+    const res = await fetchWithTimeout("./momentum-history.json?t=" + Date.now(), {cache:"no-store"}, 15000);
+    momentumHistoryCache = res.ok ? await res.json() : null;
+  }catch(e){
+    momentumHistoryCache = null;
+  }
+  return momentumHistoryCache;
 }
 
 async function loadSnapshot(){

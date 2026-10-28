@@ -6,7 +6,7 @@
    aucune clé ni quota à gérer côté visiteur du site.
    =================================================================== */
 
-const APP_VERSION = "v7.44.0";
+const APP_VERSION = "v7.45.0";
 
 let state = {
   strategy: "trending_value",
@@ -17,6 +17,10 @@ let state = {
   mcapFloor: 1000000000,
   liquidityFloor: null, // optionnel — null = aucun filtre appliqué
   quantInvesting: false, // aligne l'univers sur celui de Quant Investing (voir applyQuantInvestingUniverse)
+  qi: null,              // exclusions activées dans l'univers Quant Investing — voir QI_DEFAULTS
+  valuePct: 10,          // Trending Value : part de l'univers filtré gardée comme « moins chère » (10 = décile strict, 13 = proche de Quant Investing)
+  momMode: "price",      // momentum 6 mois : "price" (cours ajustés des splits) ou "tr" (rendement total, dividendes réinvestis)
+  excludeTakeover: false, // écarte les titres suspectés d'être sous offre de rachat (cours « collé »)
   diversificationPct: null, // optionnel — null = aucun plafond par pays
   peaOnly: false, // filtre éligibilité PEA (domicile UE/EEE)
   excludeCrossListed: false, // exclut les titres dont le domicile réel diffère du pays de cotation (badge 🌐)
@@ -68,13 +72,16 @@ function scorePool(records){
     sortedByFactor[f.key] = records.map(f.get).filter(v=>v!==null && v!==undefined).sort((a,b)=>a-b);
   });
   records.forEach(rec=>{
-    let sum = 0;
+    let sum = 0, available = 0;
     factorDefs.forEach(f=>{
-      const rank = percentileRank(f.get(rec), sortedByFactor[f.key], f.lower);
+      const v = f.get(rec);
+      if(v !== null && v !== undefined) available++;
+      const rank = percentileRank(v, sortedByFactor[f.key], f.lower);
       rec["rank_"+f.key] = rank;
       sum += rank;
     });
     rec.vc2Score = sum;
+    rec.ratiosAvailable = available; // sur 6 — un ratio manquant compte pour un rang neutre de 50
   });
   const sortedScores = records.map(r=>r.vc2Score).sort((a,b)=>a-b);
   records.forEach(rec=>{
@@ -102,6 +109,10 @@ async function runScreening(){
     }
 
     const snap = await loadSnapshot();
+    const momHist = await loadMomentumHistory();
+    // Raison d'exclusion de chaque titre écarté (symbole -> libellé) : sert
+    // au comptage par exclusion et au rapprochement avec Quant Investing.
+    const excluded = new Map();
     let records = byExchange
       ? snap.records.filter(r => state.exchanges.has(exchangeOf(r.symbol)))
       : snap.records.filter(r => state.countries.has(r.country));
@@ -109,18 +120,21 @@ async function runScreening(){
     // l'affichage des drapeaux au-dessus des résultats).
     const countries = byExchange ? [...new Set(records.map(r=>r.country))] : [...state.countries];
     const universeCount = records.length; // total réel pour ces pays, AVANT filtrage capitalisation/liquidité/doublons
-    records = records.filter(r => !r.mcap || r.mcap >= state.mcapFloor);
+    records = applyFilter(records, "Capitalisation sous le seuil", r => !r.mcap || r.mcap >= state.mcapFloor, excluded);
     if(state.liquidityFloor){
       // Un titre sans donnée de liquidité n'est PAS exclu par défaut — on ne
       // veut pas punir un titre juste parce que la donnée manque, seulement
       // écarter ceux dont on SAIT qu'ils sont peu liquides.
-      records = records.filter(r => r.avgDailyValue == null || r.avgDailyValue >= state.liquidityFloor);
+      records = applyFilter(records, "Liquidité sous le seuil", r => r.avgDailyValue == null || r.avgDailyValue >= state.liquidityFloor, excluded);
     }
+    let qiStats = null;
     if(state.quantInvesting){
-      records = applyQuantInvestingUniverse(records);
+      const qi = applyQuantInvestingUniverse(records, qiSettings(), excluded);
+      records = qi.records;
+      qiStats = qi.stats;
     }
     if(state.peaOnly){
-      records = records.filter(r => isPeaEligible(r));
+      records = applyFilter(records, "Non éligible PEA", r => isPeaEligible(r), excluded);
     }
     if(state.excludeCrossListed){
       // Utilise EXACTEMENT le même critère que le badge 🌐 affiché dans le
@@ -128,7 +142,16 @@ async function runScreening(){
       // passer des titres qui affichent pourtant le badge (cas des pays
       // hors de notre liste, ex. Nigéria, Îles Caïmans : le nom brut du
       // domicile suffit à savoir que c'est une cotation croisée).
-      records = records.filter(r => !isCrossListed(r));
+      records = applyFilter(records, "Cotation croisée 🌐", r => !isCrossListed(r), excluded);
+    }
+    // Momentum recalculé sur l'historique quotidien (copie défensive :
+    // scorePool mute les objets).
+    records = records.map(r => withMomentum({...r}, momHist, state.momMode));
+    let takeoverRemoved = 0;
+    if(state.excludeTakeover){
+      const before = records.length;
+      records = applyFilter(records, "Suspicion d'offre de rachat", r => !r.takeover, excluded);
+      takeoverRemoved = before - records.length;
     }
 
     if(records.length === 0){
@@ -137,23 +160,29 @@ async function runScreening(){
       return;
     }
 
-    const beforeDedupe = records.length;
+    const beforeDedupe = records;
     records = dedupeForScreening(records);
-    if(records.length < beforeDedupe){
-      toast(`${beforeDedupe - records.length} lignes écartées (même société sur plusieurs bourses ou classes d'actions, actions de préférence) — la recherche, elle, continue de toutes les afficher.`);
+    const dedupeRemoved = beforeDedupe.length - records.length;
+    if(dedupeRemoved > 0){
+      const kept = new Set(records.map(r=>r.symbol));
+      beforeDedupe.forEach(r=>{ if(!kept.has(r.symbol)) excluded.set(r.symbol, "Doublon d'une autre cotation (cotation principale gardée) ou action de préférence"); });
+      toast(`${dedupeRemoved} lignes écartées (même société sur plusieurs bourses ou classes d'actions, actions de préférence) — la recherche, elle, continue de toutes les afficher.`);
     }
 
-    records = scorePool(records.map(r=>({...r}))); // copie défensive, scorePool mute les objets
+    records = scorePool(records);
     const strat = STRATEGIES[state.strategy];
     // Récupère TOUS les candidats triés dans l'ordre de priorité de la
     // stratégie (pas juste les N premiers) — nécessaire pour pouvoir
     // "repêcher" les suivants d'un pays si le plafond de diversification
     // en écarte certains. Ne change RIEN au tri lui-même.
-    const fullSorted = strat.select(records, records.length);
+    const fullSorted = strat.select(records, records.length, { valuePct: state.valuePct });
     const diversification = applyDiversification(fullSorted, state.resultCount, state.diversificationPct);
     const selected = diversification.selected;
 
     state.lastResults = selected;
+    state.lastPool = records;
+    state.lastFullSorted = fullSorted;
+    state.lastExcluded = excluded;
     state.lastRunMeta = {
       strategy: state.strategy,
       poolCount: records.length,
@@ -161,6 +190,14 @@ async function runScreening(){
       countries: countries,
       exchanges: byExchange ? [...state.exchanges] : null,
       quantInvesting: state.quantInvesting,
+      qiStats,
+      dedupeRemoved,
+      takeoverRemoved,
+      excludeTakeover: state.excludeTakeover,
+      valuePct: state.valuePct,
+      momMode: state.momMode,
+      momHistGeneratedAt: momHist ? momHist.generatedAt : null,
+      momHistCount: records.filter(r=>r.momSource !== "tv").length,
       snapshotGeneratedAt: snap.generatedAt,
       diversificationPct: state.diversificationPct,
       diversificationApplied: diversification.appliedPct,
@@ -168,6 +205,8 @@ async function runScreening(){
       ts: Date.now(),
     };
     state.sortCol = "rank"; state.sortDir = "asc";
+    renderQiCounts(qiStats, dedupeRemoved);
+    if(typeof qwantRefresh === "function") qwantRefresh(); // consensus et rapport, si un export Qwant est chargé
     renderResults();
     const anchor = document.getElementById("results-anchor");
     if(anchor && anchor.scrollIntoView) anchor.scrollIntoView({behavior:"smooth", block:"start"});
@@ -256,34 +295,233 @@ function applyDiversification(sortedFullList, n, maxPct){
   return { selected: result, appliedPct: relaxed ? appliedPct : maxPct, relaxed };
 }
 
+/** Filtre `records` en notant la raison de chaque exclusion dans
+ * `excluded` (symbole -> libellé). */
+function applyFilter(records, label, keep, excluded){
+  const out = [];
+  records.forEach(r=>{ if(keep(r)) out.push(r); else if(excluded) excluded.set(r.symbol, label); });
+  return out;
+}
+
 /* ---------------------------------------------------------------
    Univers « Quant Investing »
    Règles relevées en comparant leur univers complet (7 674 titres) au
-   nôtre avec les mêmes réglages de capitalisation et de volume :
-   - pays absents de leur base : Corée, Brésil, Afrique du Sud, Turquie,
-     Mexique, Singapour ;
-   - Chine continentale absente (Shanghai, Shenzhen) : leur « Chine » ne
-     contient que des sociétés chinoises cotées à Hong Kong ;
-   - EBITDA/EV obligatoire : écarte banques et assurances, qui n'en ont pas ;
+   nôtre avec les mêmes réglages de capitalisation et de volume, puis en
+   rapprochant leurs exports de nos résultats. Chaque exclusion peut être
+   désactivée ; le nombre de titres qu'elle retire s'affiche à côté (dans
+   l'ordre d'application ci-dessous, chaque compte porte sur ce qui reste
+   après les précédentes).
+   - pays : un titre est exclu si son pays de COTATION ou son pays de
+     DOMICILE est exclu. Une société chinoise cotée à Hong Kong (ISIN CN,
+     ou ISIN KY/BM avec un siège en Chine selon TradingView — Tencent oui,
+     CK Hutchison non) compte comme « Chine », comme chez eux. « Chine
+     continentale » vise les places de Shanghai et Shenzhen, absentes de
+     leur base ;
+   - banques et assurances, repérées par INDUSTRIE : le secteur « Finance »
+     contient aussi du leasing, de la location ou de l'immobilier (Tourism
+     Holdings, FJ Next, Ichinen) que la méthode garde. Les courtiers en
+     assurance restent ;
+   - EBITDA/EV obligatoire : écartait jusqu'ici banques et assurances par
+     ricochet, gardé comme exclusion à part ;
    - comptes récents : leur filtre est « 6 derniers mois », mais les dates
      de TradingView ont souvent du retard (Halfords, leur n°1, y date de
      novembre) ; 12 mois donne le même recoupement sans perdre ces titres.
      Date inconnue = exclu ;
-   - pas de cotation croisée : une société cotée hors de son pays de
-     domicile n'est gardée que si ce domicile n'est pas un pays couvert
-     (ex. société des Bermudes cotée à New York : gardée, comme chez eux).
+   - moins d'un an de comptes : aucun exercice annuel publié ;
+   - cotations croisées : une cotation hors du pays de domicile n'est
+     gardée que si c'est la cotation principale de la société (Prudential,
+     domiciliée à Hong Kong, cotée à Londres) ou si ce domicile n'est pas un
+     pays couvert (société des Bermudes cotée à New York). Le dédoublonnage
+     qui suit garde ensuite une seule ligne par société (A-share / H-share
+     / ADR), la cotation principale en priorité.
    --------------------------------------------------------------- */
-const QI_EXCLUDED_COUNTRIES = new Set(["KR","BR","ZA","TR","MX","SG"]);
-const QI_EXCLUDED_EXCHANGES = new Set(["SSE","SZSE"]);
-function applyQuantInvestingUniverse(records){
+const QI_COUNTRY_OPTIONS = [
+  {id:"CNM", label:"Chine continentale (Shanghai, Shenzhen)"},
+  {id:"CN",  label:"Chine (toute société chinoise, y compris cotée à Hong Kong)"},
+  {id:"KR",  label:"Corée du Sud"},
+  {id:"BR",  label:"Brésil"},
+  {id:"ZA",  label:"Afrique du Sud"},
+  {id:"TR",  label:"Turquie"},
+  {id:"MX",  label:"Mexique"},
+  {id:"SG",  label:"Singapour"},
+];
+const QI_RULES = [
+  {id:"banks",          label:"Banques (industrie)"},
+  {id:"insurers",       label:"Assurances (industrie, hors courtiers)"},
+  {id:"ebitda",         label:"EBITDA/EV manquant"},
+  {id:"recentAccounts", label:"Derniers comptes publiés il y a plus de 12 mois (ou date inconnue)"},
+  {id:"minHistory",     label:"Moins d'un an de comptes publiés"},
+  {id:"crossListings",  label:"Cotations croisées (ADR, cotation secondaire hors du pays de domicile)"},
+];
+const QI_DEFAULTS = {
+  countries: ["CNM","KR","BR","ZA","TR","MX","SG"],
+  banks: true, insurers: true, ebitda: true, recentAccounts: true, minHistory: true, crossListings: true,
+};
+const QI_MAINLAND_EXCHANGES = new Set(["SSE","SZSE"]);
+const BANK_INDUSTRIES = new Set(["Major Banks","Regional Banks","Savings Banks"]);
+const INSURANCE_INDUSTRIES = new Set(["Life/Health Insurance","Property/Casualty Insurance","Multi-Line Insurance","Specialty Insurance"]);
+
+function qiSettings(){
+  const q = state.qi || {};
+  return {
+    ...QI_DEFAULTS, ...q,
+    countries: Array.isArray(q.countries) ? q.countries : QI_DEFAULTS.countries,
+  };
+}
+
+/** Société chinoise : ISIN chinois, ou siège en Chine selon TradingView
+ * (sociétés des îles Caïmans / Bermudes cotées à Hong Kong). */
+function isChineseCompany(r){
+  return (r.isin || "").startsWith("CN") || r.homeCountryCode === "CN";
+}
+/** Pays de cotation au sens de Quant Investing : Hong Kong devient
+ * « Chine » pour une société chinoise. */
+function qiListingCountry(r){
+  return exchangeOf(r.symbol) === "HKEX" && isChineseCompany(r) ? "CN" : r.country;
+}
+function qiDomicile(r){
+  return isChineseCompany(r) ? "CN" : r.homeCountryCode;
+}
+/** Premier pays exclu qui touche ce titre (id de QI_COUNTRY_OPTIONS), ou null. */
+function qiExcludedCountry(r, ids){
+  for(const id of ids){
+    if(id === "CNM"){ if(QI_MAINLAND_EXCHANGES.has(exchangeOf(r.symbol))) return id; continue; }
+    if(qiListingCountry(r) === id || r.country === id || qiDomicile(r) === id) return id;
+  }
+  return null;
+}
+
+/** Retourne {records, stats} — stats : [{id, label, removed, enabled,
+ * unavailable}], avec le détail par pays dans l'entrée "countries". */
+function applyQuantInvestingUniverse(records, opts, excluded){
+  const stats = [];
+  // Champs ajoutés au snapshot avec ces filtres : sur un snapshot plus
+  // ancien, le filtre est ignoré plutôt que de tout exclure.
+  const has = key => records.some(r => r[key] !== undefined);
+  const step = (id, label, enabled, keep, unavailable)=>{
+    if(!enabled || unavailable){ stats.push({id, label, removed:0, enabled, unavailable: !!unavailable && enabled}); return; }
+    const before = records.length;
+    records = applyFilter(records, label, keep, excluded);
+    stats.push({id, label, removed: before - records.length, enabled});
+  };
+
+  const byCountry = {};
+  const countryIds = opts.countries || [];
+  const countryStepBefore = records.length;
+  records = records.filter(r=>{
+    const id = qiExcludedCountry(r, countryIds);
+    if(!id) return true;
+    byCountry[id] = (byCountry[id] || 0) + 1;
+    if(excluded) excluded.set(r.symbol, "Pays exclu : " + QI_COUNTRY_OPTIONS.find(o=>o.id===id).label);
+    return false;
+  });
+  stats.push({id:"countries", label:"Pays exclus", removed: countryStepBefore - records.length, enabled: countryIds.length > 0, byCountry});
+
+  const noIndustry = !has("industry");
+  step("banks", "Banque", opts.banks, r => !BANK_INDUSTRIES.has(r.industry), noIndustry);
+  step("insurers", "Assurance", opts.insurers, r => !INSURANCE_INDUSTRIES.has(r.industry), noIndustry);
+  step("ebitda", "EBITDA/EV manquant", opts.ebitda, r => r.ebitdaYield != null);
   const cutoff = Date.now()/1000 - 12 * 30.44 * 86400;
-  return records.filter(r =>
-    !QI_EXCLUDED_COUNTRIES.has(r.country) &&
-    !QI_EXCLUDED_EXCHANGES.has(exchangeOf(r.symbol)) &&
-    r.ebitdaYield != null &&
-    r.reportDate != null && r.reportDate >= cutoff &&
-    !(r.homeCountryCode && r.homeCountryCode !== r.country)
-  );
+  step("recentAccounts", "Comptes de plus de 12 mois (ou date inconnue)", opts.recentAccounts, r => r.reportDate != null && r.reportDate >= cutoff);
+  step("minHistory", "Moins d'un an de comptes publiés", opts.minHistory, r => r.fyCount != null && r.fyCount >= 1, !has("fyCount"));
+  const withPrimary = has("isPrimary");
+  step("crossListings", "Cotation croisée (ADR, cotation secondaire)", opts.crossListings, r=>{
+    const domicile = qiDomicile(r);
+    if(!domicile || domicile === qiListingCountry(r)) return true;
+    // Snapshot sans l'information « cotation principale » : ancienne règle,
+    // toute cotation hors du pays de domicile est écartée.
+    return withPrimary ? r.isPrimary === 1 : false;
+  });
+  return { records, stats };
+}
+
+/** Cases à cocher des exclusions Quant Investing (sous la case principale). */
+function renderQiOptions(){
+  const wrap = document.getElementById("qiOptions");
+  if(!wrap) return;
+  const q = qiSettings();
+  wrap.style.display = state.quantInvesting ? "" : "none";
+  wrap.innerHTML = `
+    <div class="qi-group">
+      <div class="qi-head">Pays exclus <span class="pea-hint">(pays de cotation OU de domicile)</span></div>
+      ${QI_COUNTRY_OPTIONS.map(o=>`
+        <label class="pea-check qi-opt"><input type="checkbox" data-qi-country="${o.id}" ${q.countries.includes(o.id)?'checked':''}>
+          ${o.label} <span class="qi-count" data-qi-count="country-${o.id}"></span></label>`).join('')}
+    </div>
+    <div class="qi-group">
+      <div class="qi-head">Autres exclusions</div>
+      ${QI_RULES.map(o=>`
+        <label class="pea-check qi-opt"><input type="checkbox" data-qi-rule="${o.id}" ${q[o.id]?'checked':''}>
+          ${o.label} <span class="qi-count" data-qi-count="${o.id}"></span></label>`).join('')}
+      <div class="pea-hint qi-dedupe" data-qi-count="dedupe"></div>
+    </div>`;
+  if(state.lastRunMeta && state.lastRunMeta.qiStats) renderQiCounts(state.lastRunMeta.qiStats, state.lastRunMeta.dedupeRemoved);
+}
+
+/** Affiche, à côté de chaque exclusion, le nombre de titres retirés au
+ * dernier screening. */
+function renderQiCounts(stats, dedupeRemoved){
+  const wrap = document.getElementById("qiOptions");
+  if(!wrap) return;
+  wrap.querySelectorAll("[data-qi-count]").forEach(el=>{ el.textContent = ""; el.title = ""; });
+  if(!stats) return;
+  const set = (key, text, title)=>{
+    const el = wrap.querySelector(`[data-qi-count="${key}"]`);
+    if(el){ el.textContent = text; if(title) el.title = title; }
+  };
+  stats.forEach(st=>{
+    if(st.id === "countries"){
+      Object.entries(st.byCountry || {}).forEach(([id, n])=> set("country-"+id, `−${n}`));
+      return;
+    }
+    if(st.unavailable) set(st.id, "donnée absente du snapshot", "Relance le workflow « Prix et fondamentaux » pour récupérer ce champ : filtre ignoré en attendant.");
+    else if(st.enabled) set(st.id, `−${st.removed}`);
+  });
+  if(dedupeRemoved != null) set("dedupe", `Puis dédoublonnage (une ligne par société, cotation principale gardée) : −${dedupeRemoved} au dernier screening.`);
+}
+
+/* ---------------------------------------------------------------
+   Momentum 6 mois sur historique quotidien (momentum-history.json,
+   produit par fetch_momentum.py pour les titres présélectionnés).
+   Remplace le Perf.6M de TradingView quand il est disponible : fenêtre
+   datée, cours ajustés (splits) ou rendement total, alertes de saut et
+   d'offre de rachat. Les autres titres gardent la valeur TradingView.
+   --------------------------------------------------------------- */
+function momentumIndex(hist){
+  if(!hist) return null;
+  if(momentumIndex.cache === hist) return momentumIndex.value;
+  const bySymbol = hist.data || {};
+  const byIsin = {};
+  Object.values(bySymbol).forEach(v=>{ if(v.isin && !byIsin[v.isin]) byIsin[v.isin] = v; });
+  momentumIndex.cache = hist;
+  momentumIndex.value = { bySymbol, byIsin, params: hist.params || {} };
+  return momentumIndex.value;
+}
+
+function withMomentum(rec, hist, mode){
+  rec.mom6Tv = rec.mom6;
+  const idx = momentumIndex(hist);
+  // Repli par ISIN : l'historique a été calculé sur une autre cotation de
+  // la même société (présélection dédoublonnée).
+  const h = idx ? (idx.bySymbol[rec.symbol] || (rec.isin && idx.byIsin[rec.isin])) : null;
+  if(!h || h.mom6 == null){
+    rec.momSource = "tv";
+    return rec;
+  }
+  const useTr = mode === "tr" && h.mom6Tr != null;
+  rec.mom6 = useTr ? h.mom6Tr : h.mom6;
+  rec.mom6Price = h.mom6;
+  rec.mom6Tr = h.mom6Tr;
+  rec.momSource = useTr ? "tr" : "price";
+  rec.momStart = h.start;
+  rec.momEnd = h.end;
+  rec.maxJump = h.maxJump;
+  rec.maxJumpDate = h.maxJumpDate;
+  rec.jumpAlert = h.maxJump != null && h.maxJump > (idx.params.jumpThreshold || 20);
+  rec.vol60 = h.vol60;
+  rec.range2m = h.range2m;
+  rec.takeover = !!h.takeover;
+  return rec;
 }
 
 /* Actions de préférence, certificats de dépôt et lignes « série » :
@@ -308,8 +546,11 @@ function companyKey(r){
 function dedupeForScreening(pool){
   const pickBest = group=>{
     if(group.length === 1) return group[0];
+    // Cotation principale d'abord (A-share plutôt que H-share, action
+    // plutôt qu'ADR), puis cotation dans le pays de domicile.
+    const primary = group.filter(r => r.isPrimary === 1);
     const authentic = group.filter(r => !r.homeCountryCode || r.homeCountryCode === r.country);
-    const candidates = authentic.length ? authentic : group;
+    const candidates = primary.length ? primary : authentic.length ? authentic : group;
     candidates.sort((a,b)=> (b.avgDailyValue||0) - (a.avgDailyValue||0));
     return candidates[0];
   };
@@ -549,6 +790,20 @@ function renderMethodology(){
     `;
     wrap.appendChild(div);
   });
+  const data = document.createElement("div");
+  data.className = "method-item";
+  data.innerHTML = `
+    <h3>Traitement des données</h3>
+    <ul class="rules">
+      <li>Ratio manquant : rang neutre de 50 (ni pénalisé ni favorisé). La colonne « Ratios /6 » indique combien des 6 ratios du composite sont réellement renseignés ; en dessous de 4, le score repose surtout sur des rangs neutres.</li>
+      <li>Ratio négatif (perte, fonds propres ou cash-flow d'exploitation négatifs, EBITDA négatif) : pire rang. P/E, P/B et P/CF sont classés via leur inverse (bénéfice/cours...), ce qui place naturellement les valeurs négatives en queue, comme dans le livre et chez Quant Investing.</li>
+      <li>Seuil value de Trending Value : nombre exact de titres (10 % de l'univers filtré, arrondi au supérieur), compté après toutes les exclusions.</li>
+      <li>Momentum 6 mois : 6 mois calendaires jusqu'à la dernière séance, sur l'historique quotidien Yahoo (cours ajustés des splits, ou rendement total). Les titres hors présélection gardent le Perf.6M de TradingView, marqué « TradingView » dans la colonne Fenêtre 6M.</li>
+      <li>Alerte saut : une séance à plus de +20 % dans la fenêtre — le momentum dépend alors beaucoup de la date de départ.</li>
+      <li>Suspicion d'OPA : momentum ≥ +20 % et cours « collé » (volatilité quotidienne sur 60 séances ≤ 0,75 %, ou écart plus haut/plus bas sur 2 mois ≤ 5 %).</li>
+      <li>Alertes qualité : derniers comptes publiés il y a plus de 12 mois, ou dernier cours de plus de 7 jours, par rapport à la date du snapshot.</li>
+    </ul>`;
+  wrap.appendChild(data);
 }
 
 const COLS = [
@@ -564,7 +819,70 @@ const COLS = [
   {key:"mcap", label:"Cap.", num:true},
   {key:"analystLabel", label:"Analystes", num:true},
   {key:"country", label:"Pays", num:true},
+  {key:"ratiosAvailable", label:"Ratios /6", num:true},
+  {key:"momStart", label:"Fenêtre 6M", num:true},
+  {key:"maxJump", label:"Alerte saut", num:true},
+  {key:"takeover", label:"Susp. OPA", num:true},
+  {key:"reportDate", label:"Derniers comptes", num:true},
+  {key:"priceTime", label:"Dernier cours", num:true},
+  {key:"consensus", label:"Consensus Qwant", num:true},
 ];
+
+/* ---------------------------------------------------------------
+   Contrôle qualité des données : dates des derniers comptes et du
+   dernier cours, comparées à la date du snapshot.
+   --------------------------------------------------------------- */
+const STALE_ACCOUNTS_DAYS = 365;  // comptes de plus de 12 mois
+const STALE_PRICE_DAYS = 7;       // plus d'une semaine sans cotation
+
+function fmtDay(v){
+  if(v == null) return "—";
+  const d = typeof v === "number" ? new Date(v * 1000) : new Date(v + "T00:00:00Z");
+  return d.toLocaleDateString("fr-FR", {day:"2-digit", month:"2-digit", year:"2-digit", timeZone:"UTC"});
+}
+function ageDays(unixSeconds){
+  if(unixSeconds == null || !state.lastRunMeta) return null;
+  const ref = new Date(state.lastRunMeta.snapshotGeneratedAt).getTime() / 1000;
+  return (ref - unixSeconds) / 86400;
+}
+function staleAccounts(s){ const a = ageDays(s.reportDate); return a != null && a > STALE_ACCOUNTS_DAYS; }
+function stalePrice(s){ const a = ageDays(s.priceTime); return a != null && a > STALE_PRICE_DAYS; }
+
+/** Libellé de la fenêtre de momentum : dates réelles (historique
+ * quotidien) ou « TradingView » (fenêtre non communiquée). */
+function momWindowLabel(s){
+  if(s.momSource === "tv" || !s.momStart) return "TradingView";
+  return `${fmtDay(s.momStart)} → ${fmtDay(s.momEnd)}`;
+}
+function momWindowTitle(s){
+  if(s.momSource === "tv" || !s.momStart) return "Perf.6M de TradingView : titre hors de la présélection de l'historique quotidien, fenêtre non communiquée (cours ajusté des splits, sans dividendes).";
+  const parts = [`Cours ajusté des splits : ${fmtMom(s.mom6Price)}`];
+  if(s.mom6Tr != null) parts.push(`Rendement total : ${fmtMom(s.mom6Tr)}`);
+  if(s.mom6Tv != null) parts.push(`TradingView : ${fmtMom(s.mom6Tv)}`);
+  return parts.join(" · ");
+}
+function jumpCell(s){
+  if(s.maxJump == null) return "—";
+  const txt = `${fmtMom(s.maxJump)} le ${fmtDay(s.maxJumpDate)}`;
+  return s.jumpAlert
+    ? `<span class="flag-alert" title="Plus forte hausse en une séance dans la fenêtre : le momentum dépend fortement de la date de départ">⚠ ${txt}</span>`
+    : `<span class="flag-ok" title="Plus forte hausse en une séance dans la fenêtre">${txt}</span>`;
+}
+function takeoverCell(s){
+  if(s.momSource === "tv") return "—";
+  const detail = `volatilité 60 séances ${s.vol60 != null ? s.vol60.toFixed(2)+" %/jour" : "—"}, écart plus haut/plus bas sur 2 mois ${s.range2m != null ? s.range2m.toFixed(1)+" %" : "—"}`;
+  return s.takeover
+    ? `<span class="flag-alert" title="Cours collé après une forte hausse (${detail}) : probable offre de rachat, le momentum vient de la prime d'offre">⚠ OPA ?</span>`
+    : `<span class="flag-ok" title="${detail}">non</span>`;
+}
+function dateCell(v, stale, what){
+  if(v == null) return `<span class="flag-alert" title="${what} inconnue">?</span>`;
+  return stale ? `<span class="flag-alert" title="${what} trop ancienne">⚠ ${fmtDay(v)}</span>` : fmtDay(v);
+}
+function consensusCell(s){
+  if(!state.qwantConsensus) return "—";
+  return state.qwantConsensus.has(s.symbol) ? `<span class="flag-good" title="Aussi dans le top ${state.qwantTopN} de Quant Investing">✓</span>` : "";
+}
 
 function analystBadgeHTML(label){
   if(!label) return '<span class="analyst-badge none">—</span>';
@@ -599,6 +917,15 @@ function renderResults(){
   if(state.lastRunMeta.quantInvesting){
     meta.innerHTML += ` · <span class="diversification-note">Univers aligné sur Quant Investing.</span>`;
   }
+  if(state.lastRunMeta.strategy === "trending_value"){
+    meta.innerHTML += ` · Seuil value : ${state.lastRunMeta.valuePct} % les moins chers de l'univers filtré`;
+  }
+  meta.innerHTML += state.lastRunMeta.momHistGeneratedAt
+    ? ` · Momentum ${state.lastRunMeta.momMode === "tr" ? "rendement total" : "cours ajustés"} sur historique quotidien pour ${state.lastRunMeta.momHistCount} titre(s) (calcul du ${new Date(state.lastRunMeta.momHistGeneratedAt).toLocaleDateString('fr-FR')}), Perf.6M TradingView pour les autres`
+    : ` · <span class="diversification-note">Historique de momentum indisponible (momentum-history.json) : Perf.6M TradingView pour tous les titres.</span>`;
+  if(state.lastRunMeta.excludeTakeover){
+    meta.innerHTML += ` · ${state.lastRunMeta.takeoverRemoved} suspicion(s) d'offre de rachat écartée(s)`;
+  }
   if(state.lastRunMeta.diversificationPct){
     if(state.lastRunMeta.diversificationRelaxed){
       meta.innerHTML += ` · <span class="diversification-note">⚠ Plafond de diversification demandé (${state.lastRunMeta.diversificationPct}%) impossible à tenir avec assez de pays différents — relâché automatiquement à ~${state.lastRunMeta.diversificationApplied}% pour remplir la liste.</span>`;
@@ -623,8 +950,15 @@ function renderResults(){
 
   let rows = [...state.lastResults];
   if(state.sortCol !== "rank"){
+    // Valeur de tri : le consensus n'est pas un champ du titre, les
+    // booléens (suspicion OPA) se trient comme 0/1, et les valeurs
+    // manquantes vont toujours en fin de liste.
+    const sortValue = s => state.sortCol === "consensus"
+      ? (state.qwantConsensus && state.qwantConsensus.has(s.symbol) ? 1 : 0)
+      : (typeof s[state.sortCol] === "boolean" ? +s[state.sortCol] : s[state.sortCol]);
     rows.sort((a,b)=>{
-      const av = a[state.sortCol], bv = b[state.sortCol];
+      const av = sortValue(a), bv = sortValue(b);
+      if(av == null || bv == null) return (av == null) - (bv == null);
       if(typeof av === "string") return state.sortDir==="asc" ? av.localeCompare(bv) : bv.localeCompare(av);
       return state.sortDir==="asc" ? (av-bv) : (bv-av);
     });
@@ -665,6 +999,13 @@ function renderResults(){
       mcap:             `<td class="num" data-label="Capitalisation">${fmtMcap(s.mcap)}</td>`,
       analystLabel:     `<td class="num" data-label="Analystes">${analystBadgeHTML(s.analystLabel)}</td>`,
       country:          `<td class="num" data-label="Pays">${cm?flagHTML(s.country)+' '+cm.code:s.country||'—'}${homeCountryBadge(s)}</td>`,
+      ratiosAvailable:  `<td class="num" data-label="Ratios disponibles" title="Ratios du composite renseignés ; un ratio manquant reçoit le rang neutre 50">${s.ratiosAvailable} / 6</td>`,
+      momStart:         `<td class="num" data-label="Fenêtre 6M" title="${momWindowTitle(s)}">${momWindowLabel(s)}</td>`,
+      maxJump:          `<td class="num" data-label="Alerte saut">${jumpCell(s)}</td>`,
+      takeover:         `<td class="num" data-label="Susp. OPA">${takeoverCell(s)}</td>`,
+      reportDate:       `<td class="num" data-label="Derniers comptes">${dateCell(s.reportDate, staleAccounts(s), "Date des derniers comptes")}</td>`,
+      priceTime:        `<td class="num" data-label="Dernier cours">${dateCell(s.priceTime, stalePrice(s), "Date du dernier cours")}</td>`,
+      consensus:        `<td class="num" data-label="Consensus Qwant">${consensusCell(s)}</td>`,
     };
     html += `<tr data-symbol="${s.symbol}"${rowClasses ? ` class="${rowClasses}"` : ''}>
       ${cols.map(c=>cellHtml[c.key] || '<td></td>').join('')}
@@ -692,7 +1033,7 @@ function renderResults(){
         <div class="detail-item"><div class="k">Liquidité (valeur échangée/jour)</div><div class="v">${s.avgDailyValue!=null?fmtMcap(s.avgDailyValue):'—'}</div></div>
       </div>
       ${warnings.length ? `<div class="detail-warnings">⚠ ${warnings.join(' · ')}</div>` : ''}
-      <div class="detail-note">Rangs percentiles calculés sur l'univers filtré de ${state.lastRunMeta.poolCount} entreprises. Une valeur manquante reçoit un rang neutre de 50, conformément à la méthode du livre.</div>
+      <div class="detail-note">Rangs percentiles calculés sur l'univers filtré de ${state.lastRunMeta.poolCount} entreprises (${s.ratiosAvailable} ratio(s) sur 6 disponibles ici). Un ratio manquant reçoit le rang neutre de 50 ; un ratio négatif (perte, fonds propres ou cash-flow négatifs) reçoit le pire rang, comme dans le livre et chez Quant Investing. Momentum 6 mois : ${momWindowLabel(s)} — ${momWindowTitle(s)}.</div>
     </td></tr>`;
   });
   html += `</tbody></table>`;
@@ -724,12 +1065,14 @@ function renderResults(){
   });
 }
 
+function isoDay(unixSeconds){ return unixSeconds == null ? "" : new Date(unixSeconds * 1000).toISOString().slice(0,10); }
+
 function exportCSV(){
   if(!state.lastResults.length) return;
-  const headers = ["rank","symbol","isin","name","country","sector","price","mcap","vc2Score","vc2Rank","mom3","mom6","pe","pb","ps","pcf","ebitdaYield","divYield","shareholderYield","analystLabel"];
+  const headers = ["rank","symbol","isin","name","country","sector","industry","price","mcap","vc2Score","vc2Rank","ratiosAvailable","mom3","mom6","momSource","momStart","momEnd","mom6Tr","mom6Tv","maxJump","maxJumpDate","takeover","pe","pb","ps","pcf","ebitdaYield","divYield","shareholderYield","analystLabel","reportDate","priceDate","consensus"];
   let csv = headers.join(",")+"\n";
   state.lastResults.forEach((s,i)=>{
-    const row = [i+1, s.symbol, s.isin||"", `"${(s.name||"").replace(/"/g,'""')}"`, s.country, s.sector, s.price, s.mcap, s.vc2Score, s.vc2Rank, s.mom3, s.mom6, s.pe, s.pb, s.ps, s.pcf, s.ebitdaYield, s.divYield, s.shareholderYield, s.analystLabel||""];
+    const row = [i+1, s.symbol, s.isin||"", `"${(s.name||"").replace(/"/g,'""')}"`, s.country, s.sector, s.industry||"", s.price, s.mcap, s.vc2Score, s.vc2Rank, s.ratiosAvailable, s.mom3, s.mom6, s.momSource, s.momStart||"", s.momEnd||"", s.mom6Tr, s.mom6Tv, s.maxJump, s.maxJumpDate||"", s.takeover?1:0, s.pe, s.pb, s.ps, s.pcf, s.ebitdaYield, s.divYield, s.shareholderYield, s.analystLabel||"", isoDay(s.reportDate), isoDay(s.priceTime), state.qwantConsensus ? (state.qwantConsensus.has(s.symbol)?1:0) : ""];
     csv += row.map(v=>v===null||v===undefined?"":v).join(",")+"\n";
   });
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
@@ -771,6 +1114,22 @@ function exportExcel(){
     "Rend. Dividende": s.divYield,
     "Rend. Actionnarial": s.shareholderYield,
     "Note analystes": s.analystLabel || "",
+    "Industrie": s.industry || "",
+    "Ratios disponibles /6": s.ratiosAvailable,
+    "Momentum — source": {tv:"TradingView", price:"Historique (cours ajustés)", tr:"Historique (rendement total)"}[s.momSource] || "",
+    "Momentum — début": s.momStart || "",
+    "Momentum — fin": s.momEnd || "",
+    "Momentum 6M rendement total (%)": s.mom6Tr,
+    "Momentum 6M TradingView (%)": s.mom6Tv,
+    "Plus forte séance (%)": s.maxJump,
+    "Date plus forte séance": s.maxJumpDate || "",
+    "Alerte saut": s.jumpAlert ? "oui" : "",
+    "Suspicion OPA": s.takeover ? "oui" : "",
+    "Derniers comptes": isoDay(s.reportDate),
+    "Alerte comptes > 12 mois": staleAccounts(s) ? "oui" : "",
+    "Dernier cours": isoDay(s.priceTime),
+    "Alerte cours périmé": stalePrice(s) ? "oui" : "",
+    "Consensus Qwant": state.qwantConsensus ? (state.qwantConsensus.has(s.symbol) ? "oui" : "") : "",
   }));
 
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -822,6 +1181,10 @@ function getScreenerSettings(){
     peaOnly: state.peaOnly,
     excludeCrossListed: state.excludeCrossListed,
     quantInvesting: state.quantInvesting,
+    qi: qiSettings(),
+    valuePct: state.valuePct,
+    momMode: state.momMode,
+    excludeTakeover: state.excludeTakeover,
   };
 }
 
@@ -838,7 +1201,10 @@ function applyScreenerSettings(s){
   if(s.mcapFloor != null) state.mcapFloor = s.mcapFloor;
   if("liquidityFloor" in s) state.liquidityFloor = s.liquidityFloor;
   if("diversificationPct" in s) state.diversificationPct = s.diversificationPct;
-  ["peaOnly","excludeCrossListed","quantInvesting"].forEach(k=>{ if(k in s) state[k] = !!s[k]; });
+  ["peaOnly","excludeCrossListed","quantInvesting","excludeTakeover"].forEach(k=>{ if(k in s) state[k] = !!s[k]; });
+  if(s.qi) state.qi = { ...s.qi, countries: Array.isArray(s.qi.countries) ? [...s.qi.countries] : QI_DEFAULTS.countries };
+  if(s.valuePct) state.valuePct = s.valuePct;
+  if(s.momMode === "price" || s.momMode === "tr") state.momMode = s.momMode;
 
   document.querySelectorAll(".strategy-card").forEach(el=>el.classList.toggle("active", el.dataset.id === state.strategy));
   renderCountryList();
@@ -849,7 +1215,10 @@ function applyScreenerSettings(s){
   setSel("mcapFloor", state.mcapFloor);
   setSel("liquidityFloor", state.liquidityFloor);
   setSel("diversificationPct", state.diversificationPct);
-  ["peaOnly","excludeCrossListed","quantInvesting"].forEach(id=>{ const el = document.getElementById(id); if(el) el.checked = state[id]; });
+  ["peaOnly","excludeCrossListed","quantInvesting","excludeTakeover"].forEach(id=>{ const el = document.getElementById(id); if(el) el.checked = state[id]; });
+  setSel("valuePct", state.valuePct);
+  setSel("momMode", state.momMode);
+  renderQiOptions();
   // Une stratégie indicielle réimpose (et verrouille) ses propres filtres.
   applyStrategyPreset(STRATEGIES[state.strategy]);
 }
@@ -1030,6 +1399,32 @@ function init(){
 
   document.getElementById("quantInvesting").addEventListener("change", (e)=>{
     state.quantInvesting = e.target.checked;
+    renderQiOptions();
+  });
+  renderQiOptions();
+  document.getElementById("qiOptions").addEventListener("change", (e)=>{
+    const q = qiSettings();
+    const country = e.target.dataset.qiCountry, rule = e.target.dataset.qiRule;
+    if(country){
+      const set = new Set(q.countries);
+      if(e.target.checked) set.add(country); else set.delete(country);
+      q.countries = QI_COUNTRY_OPTIONS.map(o=>o.id).filter(id=>set.has(id));
+    } else if(rule){
+      q[rule] = e.target.checked;
+    }
+    state.qi = q;
+  });
+
+  document.getElementById("valuePct").addEventListener("change", (e)=>{
+    state.valuePct = parseInt(e.target.value,10) || 10;
+  });
+
+  document.getElementById("momMode").addEventListener("change", (e)=>{
+    state.momMode = e.target.value === "tr" ? "tr" : "price";
+  });
+
+  document.getElementById("excludeTakeover").addEventListener("change", (e)=>{
+    state.excludeTakeover = e.target.checked;
   });
 
   document.getElementById("diversificationPct").addEventListener("change", (e)=>{

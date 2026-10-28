@@ -958,3 +958,28 @@ td.num, .detail-item .v, .cash-amount, .pf-tab-value, .div-list td{font-variant-
 .deleted-tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:6px;border:1px solid var(--hairline);color:var(--ink-faint);margin-left:4px;vertical-align:1px;}
 .dates-bar{margin-top:14px;padding-top:12px;border-top:1px solid var(--hairline);}
 .closure-detail-list input.pos-date{width:auto;padding:5px 7px;font-size:12.5px;border-radius:8px;}
+
+/* ---------- Univers Quant Investing : exclusions réglables ---------- */
+.qi-options{margin:10px 0 0 22px;padding:10px 12px;border:1px dashed var(--hairline-bright);border-radius:8px;display:grid;gap:10px;}
+.qi-head{font-size:0.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:4px;}
+.qi-opt.pea-check{border:none;background:none;padding:3px 0;margin:0;border-radius:0;font-size:0.8rem;}
+.qi-count{font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--oxide-bright);margin-left:4px;}
+.qi-dedupe{display:block;margin-top:4px;}
+
+/* ---------- Alertes de données (momentum, OPA, dates) ---------- */
+.flag-alert{color:var(--oxide-bright);font-weight:600;cursor:help;white-space:nowrap;}
+.flag-ok{color:var(--ink-faint);cursor:help;white-space:nowrap;}
+.flag-good{color:var(--verdigris-bright);font-weight:700;}
+
+/* ---------- Rapprochement Quant Investing ---------- */
+.qwant-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:12px;}
+.qwant-file{cursor:pointer;}
+.qwant-n{font-size:0.8rem;color:var(--ink-faint);display:flex;align-items:center;gap:6px;}
+.qwant-n input{width:70px;}
+.qwant-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px;}
+.qwant-summary .card{background:var(--panel);border:1px solid var(--hairline);border-radius:var(--r);padding:14px;}
+.qwant-summary .card .lbl{font-size:12.5px;color:var(--ink-faint);margin-bottom:6px;}
+.qwant-summary .card .val{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;}
+.qwant-summary .card .sub-lines{font-size:0.74rem;color:var(--ink-faint);margin-top:6px;}
+.qwant-block{margin-top:18px;overflow-x:auto;}
+.qwant-block h3{font-size:0.95rem;margin:0 0 8px;}

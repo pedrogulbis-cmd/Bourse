@@ -495,7 +495,7 @@ function renderAll(){
 
 async function init(){
   const versionEl = document.getElementById("appVersion");
-  if(versionEl) versionEl.textContent = "v7.44.0";
+  if(versionEl) versionEl.textContent = "v7.45.0";
   const benchSel = document.getElementById("filterBenchmark");
   benchSel.value = getBenchmark();
   renderAll();

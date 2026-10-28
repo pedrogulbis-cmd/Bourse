@@ -188,6 +188,30 @@ async function explainQwantOnly(m, topN){
   return reason ? `Exclu par un filtre : ${reason}` : "Hors des pays / places sélectionnés";
 }
 
+const QWANT_CONCENTRATION = 20; // part (%) à partir de laquelle un secteur ou un pays est signalé
+
+/** Drapeau + code pays (pays de cotation, comme dans le tableau des résultats). */
+function countryCell(code){
+  if(!code) return "—";
+  return countryMeta(code) ? `${flagHTML(code)} ${code}` : code;
+}
+/** Secteur d'un titre Grand Livre : industrie TradingView si connue. */
+function glSector(r){ return r.industry || r.sector || "—"; }
+/** Secteur d'une ligne Qwant : sous-secteur (« Oil & Gas »), plus parlant
+ * que le secteur (« Energy »). */
+function qwSector(q){ return q.subSector || q.sector || null; }
+
+/** Répartition d'une liste par clé, en part décroissante. */
+function breakdown(items, keyFn){
+  const counts = {};
+  items.forEach(it=>{ const k = keyFn(it) || "—"; counts[k] = (counts[k] || 0) + 1; });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k,n])=>({k, n, pct: n / items.length * 100}));
+}
+function breakdownHTML(title, rows, labelFn){
+  return `<div class="qwant-mix"><span class="qwant-mix-title">${title}</span>${rows.map(r=>
+    `<span class="qwant-chip${r.pct >= QWANT_CONCENTRATION ? ' heavy' : ''}" title="${r.n} titre(s), ${r.pct.toFixed(0)} %">${labelFn(r.k)} <b>${r.n}</b></span>`).join("")}</div>`;
+}
+
 function fmtGap(v){ return v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + " pts"; }
 
 function renderQwantReport(d){
@@ -198,6 +222,8 @@ function renderQwantReport(d){
     const why = flagged ? [c.r.jumpAlert ? "saut dans la fenêtre" : null, c.r.takeover ? "suspicion OPA" : null, c.r.momSource === "tv" ? "fenêtre TradingView non datée" : null, c.r.momSource === "tr" ? "toi en rendement total" : null].filter(Boolean).join(", ") : "";
     return `<tr class="${flagged ? 'has-warn' : ''}">
       <td class="name"><span class="cname">${c.r.name}</span><span class="tkr">${c.r.symbol}</span></td>
+      <td class="num">${countryCell(c.r.country)}${homeCountryBadge(c.r)}</td>
+      <td title="Grand Livre : ${glSector(c.r)}${c.q.sector ? ' · Qwant : ' + c.q.sector : ''}">${qwSector(c.q) || glSector(c.r)}</td>
       <td class="num">${c.glRank}</td><td class="num">${c.q.rank}</td><td class="num">${rankGap >= 0 ? "+" : ""}${rankGap}</td>
       <td class="num">${fmtMom(c.r.mom6)}</td><td class="num">${fmtMom(c.q.mom6)}</td>
       <td class="num">${flagged ? `<span class="flag-alert" title="${why || 'cause non identifiée'}">⚠ ${fmtGap(c.gap)}</span>` : fmtGap(c.gap)}</td>
@@ -207,13 +233,15 @@ function renderQwantReport(d){
   }).join("");
   const rowsGlOnly = d.glOnly.map(r=>`<tr>
       <td class="name"><span class="cname">${r.name}</span><span class="tkr">${r.symbol}</span></td>
-      <td class="num">${d.glList.indexOf(r) + 1}</td><td class="num">${r.country || "—"}</td>
+      <td class="num">${d.glList.indexOf(r) + 1}</td><td class="num">${countryCell(r.country)}${homeCountryBadge(r)}</td>
+      <td title="${r.sector || ''}">${glSector(r)}</td>
       <td class="num">${r.vc2Rank}</td><td class="num">${fmtMom(r.mom6)}</td>
       <td class="num">${[r.takeover ? "⚠ OPA ?" : "", r.jumpAlert ? "⚠ saut" : ""].filter(Boolean).join(" ") || ""}</td>
     </tr>`).join("");
   const rowsQOnly = d.qwantOnly.map((m,i)=>`<tr>
       <td class="name"><span class="cname">${m.q.name}</span><span class="tkr">${m.q.ticker ?? ""} · ${m.q.isin ?? ""}</span></td>
-      <td class="num">${m.q.rank}</td><td class="num">${m.q.country || "—"}</td>
+      <td class="num">${m.q.rank}</td><td class="num" title="${m.q.country || ''}">${countryCell(m.q.countryCode) === "—" ? (m.q.country || "—") : countryCell(m.q.countryCode)}</td>
+      <td title="${m.q.sector || ''}">${qwSector(m.q) || "—"}</td>
       <td class="num">${m.q.vc2 ?? "—"}</td><td class="num">${fmtMom(m.q.mom6)}</td>
       <td data-qwant-why="${i}">…</td>
     </tr>`).join("");
@@ -239,15 +267,18 @@ function renderQwantReport(d){
     </div>
     <div class="qwant-block">
       <h3>Titres communs (${d.common.length}) <span class="pea-hint">— rang et momentum comparés ; écart = Grand Livre − Qwant</span></h3>
-      ${d.common.length ? `<table class="results"><thead><tr><th>Titre</th><th class="num">Rang GL</th><th class="num">Rang Qwant</th><th class="num">Écart de rang</th><th class="num">Mom. 6M GL</th><th class="num">Mom. 6M Qwant</th><th class="num">Écart</th><th class="num">Fenêtre GL</th><th class="num">Rapproché par</th></tr></thead><tbody>${rowsCommon}</tbody></table>` : `<div class="empty-state">Aucun titre commun.</div>`}
+      ${d.common.length ? breakdownHTML("Par secteur", breakdown(d.common, c=>qwSector(c.q) || glSector(c.r)), k=>k)
+        + breakdownHTML("Par pays", breakdown(d.common, c=>c.r.country), k=>countryCell(k))
+        + `<div class="pea-hint">En rouge : ${QWANT_CONCENTRATION} % ou plus des titres communs. Secteur = sous-secteur Quant Investing (industrie TradingView au survol).</div>` : ""}
+      ${d.common.length ? `<table class="results"><thead><tr><th>Titre</th><th class="num">Pays</th><th>Secteur</th><th class="num">Rang GL</th><th class="num">Rang Qwant</th><th class="num">Écart de rang</th><th class="num">Mom. 6M GL</th><th class="num">Mom. 6M Qwant</th><th class="num">Écart</th><th class="num">Fenêtre GL</th><th class="num">Rapproché par</th></tr></thead><tbody>${rowsCommon}</tbody></table>` : `<div class="empty-state">Aucun titre commun.</div>`}
     </div>
     <div class="qwant-block">
       <h3>Seulement dans Grand Livre (${d.glOnly.length}) <span class="pea-hint">— de ton top ${n}, absents de l'export Qwant</span></h3>
-      ${d.glOnly.length ? `<table class="results"><thead><tr><th>Titre</th><th class="num">Rang GL</th><th class="num">Pays</th><th class="num">Percentile value</th><th class="num">Mom. 6M</th><th class="num">Alertes</th></tr></thead><tbody>${rowsGlOnly}</tbody></table>` : `<div class="empty-state">Aucun.</div>`}
+      ${d.glOnly.length ? `<table class="results"><thead><tr><th>Titre</th><th class="num">Rang GL</th><th class="num">Pays</th><th>Secteur</th><th class="num">Percentile value</th><th class="num">Mom. 6M</th><th class="num">Alertes</th></tr></thead><tbody>${rowsGlOnly}</tbody></table>` : `<div class="empty-state">Aucun.</div>`}
     </div>
     <div class="qwant-block">
       <h3>Seulement dans Qwant (${d.qwantOnly.length}) <span class="pea-hint">— de son top ${n}, absents de ton top ${n}, avec la raison côté Grand Livre</span></h3>
-      ${d.qwantOnly.length ? `<table class="results"><thead><tr><th>Titre</th><th class="num">Rang Qwant</th><th class="num">Pays</th><th class="num">VC2 Qwant</th><th class="num">Mom. 6M Qwant</th><th>Chez Grand Livre</th></tr></thead><tbody>${rowsQOnly}</tbody></table>` : `<div class="empty-state">Aucun.</div>`}
+      ${d.qwantOnly.length ? `<table class="results"><thead><tr><th>Titre</th><th class="num">Rang Qwant</th><th class="num">Pays</th><th>Secteur</th><th class="num">VC2 Qwant</th><th class="num">Mom. 6M Qwant</th><th>Chez Grand Livre</th></tr></thead><tbody>${rowsQOnly}</tbody></table>` : `<div class="empty-state">Aucun.</div>`}
     </div>`;
 }
 
